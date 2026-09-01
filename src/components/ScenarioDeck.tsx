@@ -1,0 +1,142 @@
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { uiTranslations, scenariosData, Language } from '../data/content';
+
+export function ScenarioDeck({ 
+  language, 
+  onSelect 
+}: { 
+  language: Language, 
+  onSelect: (id: string) => void 
+}) {
+  const scenarios = scenariosData[language];
+  const t = uiTranslations[language];
+  
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [downSwipeCount, setDownSwipeCount] = useState(0);
+  const [exitDirection, setExitDirection] = useState<'left' | 'right' | 'down' | 'up' | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragEnd = (event: any, info: any, scenarioId: string) => {
+    setTimeout(() => setIsDragging(false), 50);
+    const threshold = 80; // slightly lower threshold for easier swiping
+
+    const velocity = info.velocity;
+
+    const isSwipeUp = info.offset.y < -threshold || velocity.y < -500;
+    const isSwipeDown = info.offset.y > threshold || velocity.y > 500;
+    const isSwipeLeft = info.offset.x < -threshold || velocity.x < -500;
+    const isSwipeRight = info.offset.x > threshold || velocity.x > 500;
+
+    if (isSwipeUp) {
+      setExitDirection('up');
+      setDownSwipeCount(0);
+      setCurrentIndex(prev => prev + 1);
+    } else if (isSwipeDown) {
+      setExitDirection('down');
+      const newCount = downSwipeCount + 1;
+      if (newCount >= 3) {
+        setTimeout(() => onSelect('INFO_CARD'), 50);
+        setDownSwipeCount(0); // reset
+      } else {
+        setDownSwipeCount(newCount);
+      }
+      setCurrentIndex(prev => prev + 1);
+    } else if (isSwipeLeft) {
+      setExitDirection('left');
+      setDownSwipeCount(0);
+      setCurrentIndex(prev => prev + 1);
+    } else if (isSwipeRight) {
+      setExitDirection('right');
+      setDownSwipeCount(0);
+      setCurrentIndex(prev => prev + 1);
+    }
+  };
+
+  const handleCardTap = (scenarioId: string) => {
+    setExitDirection('up');
+    onSelect(scenarioId);
+  };
+
+  // Stack 3 cards
+  const stackItems = [0, 1, 2].map(offset => {
+    const absoluteIndex = currentIndex + offset;
+    const scenario = scenarios[absoluteIndex % scenarios.length];
+    return { ...scenario, absoluteIndex, offset };
+  });
+
+  return (
+    <div className="relative w-full flex-shrink-0 h-[65vh] max-h-[550px] flex items-center justify-center perspective-[1000px]">
+      <AnimatePresence custom={exitDirection}>
+        {stackItems.map((item, i) => {
+          const isTop = i === 0;
+
+          return (
+            <motion.div
+              key={item.absoluteIndex}
+              custom={exitDirection}
+              layout
+              drag={isTop}
+              dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+              dragElastic={0.8}
+              onDragStart={() => isTop && setIsDragging(true)}
+              onDragEnd={(e, info) => isTop && handleDragEnd(e, info, item.id)}
+              onClick={(e) => {
+                if (isDragging) {
+                  e.preventDefault();
+                  return;
+                }
+                if (isTop) handleCardTap(item.id);
+              }}
+              initial={{ 
+                opacity: 0, 
+                scale: 0.8, 
+                y: 80 
+              }}
+              animate={{ 
+                opacity: 1 - i * 0.15, 
+                scale: 1 - i * 0.05, 
+                y: i * 20,
+                zIndex: 10 - i
+              }}
+              exit={(direction) => ({ 
+                opacity: 0, 
+                scale: isTop ? 1 : 0.8, 
+                x: isTop && direction === 'left' ? -400 : isTop && direction === 'right' ? 400 : 0,
+                y: isTop && direction === 'up' ? -400 : isTop && direction === 'down' ? 400 : 100, 
+                transition: { duration: 0.3 }
+              })}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute w-full h-full max-h-[500px] max-w-[340px] bg-bg-card border border-border-main p-8 flex flex-col items-center justify-center text-center rounded-2xl shadow-2xl origin-bottom"
+              style={{
+                cursor: isTop ? 'grab' : 'auto'
+              }}
+              whileTap={{ cursor: isTop ? 'grabbing' : 'auto' }}
+            >
+              <h2 className="text-3xl font-serif text-text-main mb-4 tracking-wide leading-tight">
+                {item.title}
+              </h2>
+              <p className="text-sm font-sans text-text-muted mb-12 tracking-wider uppercase">
+                {item.subtitle}
+              </p>
+              <div className="w-8 h-[1px] bg-bg-border mb-12" />
+              <p className="text-sm font-sans text-text-sec leading-relaxed max-w-[240px]">
+                {item.description}
+              </p>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+      
+      {/* Indicators */}
+      <div className="absolute -bottom-8 flex space-x-3">
+        {scenarios.map((s, idx) => (
+          <div 
+            key={idx} 
+            className={`w-1.5 h-1.5 rounded-full transition-colors duration-500 ${s.id === scenarios[currentIndex % scenarios.length].id ? 'bg-bg-inv' : 'bg-bg-border'}`} 
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
