@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { hostP2PNode } from './p2p';
 import { db } from './firebase';
 import { doc, setDoc, getDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { Language } from '../data/content';
 
 export interface DinnerSession {
   id: string;
   tableName: string;
   scenarioId: string;
+  language: Language;
   currentActIndex: number;
   status: 'WAITING' | 'ACTIVE' | 'PAUSED' | 'COMPLETED';
   actStartedAt: number | null;
@@ -198,13 +200,14 @@ export function useSessions() {
     }
   }, []);
 
-  const createSession = useCallback((tableName: string, scenarioId: string, devMode?: boolean) => {
+  const createSession = useCallback((tableName: string, scenarioId: string, devMode?: boolean, language: Language = 'ES') => {
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
     const current = getSessions();
     const newSession: DinnerSession = {
       id,
       tableName,
       scenarioId,
+      language,
       currentActIndex: 0,
       status: 'WAITING',
       actStartedAt: null,

@@ -15,7 +15,7 @@ export interface SessionData {
 }
 
 const DEFAULT_SESSION: SessionData = {
-  language: 'RU',
+  language: 'ES',
   scenarioId: null,
   currentActIndex: 0,
   maxActIndexReached: 0,
@@ -32,7 +32,7 @@ export function useSession() {
       try {
         const parsed = JSON.parse(saved);
         const validLangs: Language[] = ['EN', 'ES', 'RU'];
-        const lang: Language = validLangs.includes(parsed.language) ? parsed.language : 'RU';
+        const lang: Language = validLangs.includes(parsed.language) ? parsed.language : 'ES';
         const validStates: AppState[] = ['HOME', 'INFO', 'INTRO', 'ACTS', 'END'];
         let state: AppState = validStates.includes(parsed.state) ? parsed.state : 'HOME';
 

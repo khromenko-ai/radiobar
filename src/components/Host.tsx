@@ -151,6 +151,7 @@ function HostSessionWidget({
   onQr: () => void;
 }) {
   const t = uiTranslations[language];
+  const { updateSession } = useSessions();
   const { timeFormatted, isExpired } = useActTimer({
     actStartedAt: s.actStartedAt,
     durationMs,
@@ -193,16 +194,25 @@ function HostSessionWidget({
         </div>
       </div>
 
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onQr();
-        }}
-        className="p-3 border border-border-main rounded-xl hover:border-border-focus hover:bg-bg-elevated text-text-sub hover:text-text-main transition-colors flex items-center justify-center cursor-pointer"
-        title={t.hostQrCode}
-      >
-        <QrCode size={18} />
-      </button>
+      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <select
+          value={s.language || 'ES'}
+          onChange={(e) => updateSession(s.id, { language: e.target.value as Language })}
+          className="bg-bg-main border border-border-main text-[10px] text-text-sec focus:outline-none focus:border-border-focus rounded-xl px-2 py-2.5 uppercase cursor-pointer"
+          title="Session Language"
+        >
+          <option value="ES">ES</option>
+          <option value="EN">EN</option>
+          <option value="RU">RU</option>
+        </select>
+        <button
+          onClick={onQr}
+          className="p-3 border border-border-main rounded-xl hover:border-border-focus hover:bg-bg-elevated text-text-sub hover:text-text-main transition-colors flex items-center justify-center cursor-pointer"
+          title={t.hostQrCode}
+        >
+          <QrCode size={18} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -226,6 +236,7 @@ function HostDashboard({
   const { sessions, createSession, deleteSession } = useSessions();
   const [newTable, setNewTable] = useState('');
   const [newScenario, setNewScenario] = useState('first-date');
+  const [newLanguage, setNewLanguage] = useState<Language>('ES');
   const [qrSession, setQrSession] = useState<DinnerSession | null>(null);
 
   const durationMs = sessionState.devMode ? 10000 : 10 * 60 * 1000;
@@ -236,7 +247,7 @@ function HostDashboard({
 
   const handleCreate = () => {
     if (!newTable.trim()) return;
-    const id = createSession(newTable.trim(), newScenario, sessionState.devMode);
+    const id = createSession(newTable.trim(), newScenario, sessionState.devMode, newLanguage);
     setNewTable('');
     onSelectSession(id);
   };
@@ -274,6 +285,15 @@ function HostDashboard({
             <option value="first-date" className="bg-bg-elevated">{scenariosData[language].find(x => x.id === 'first-date')?.title}</option>
             <option value="best-friends" className="bg-bg-elevated">{scenariosData[language].find(x => x.id === 'best-friends')?.title}</option>
             <option value="relationship-reboost" className="bg-bg-elevated">{scenariosData[language].find(x => x.id === 'relationship-reboost')?.title}</option>
+          </select>
+          <select 
+            value={newLanguage} 
+            onChange={e => setNewLanguage(e.target.value as Language)}
+            className="bg-transparent border-b border-border-focus text-sm text-text-sec focus:outline-none focus:border-text-main tracking-widest pb-2 uppercase appearance-none cursor-pointer"
+          >
+            <option value="ES" className="bg-bg-elevated">ESPAÑOL</option>
+            <option value="EN" className="bg-bg-elevated">ENGLISH</option>
+            <option value="RU" className="bg-bg-elevated">РУССКИЙ</option>
           </select>
         </div>
         <button 
@@ -481,6 +501,16 @@ function HostSessionControl({
             </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            <select
+              value={session.language || 'ES'}
+              onChange={(e) => updateSession(session.id, { language: e.target.value as Language })}
+              className="bg-bg-sub border border-border-main text-[10px] text-text-sec focus:outline-none focus:border-border-focus rounded-xl px-2.5 py-1.5 uppercase cursor-pointer font-medium"
+              title="Session Language"
+            >
+              <option value="ES">ESPAÑOL</option>
+              <option value="EN">ENGLISH</option>
+              <option value="RU">РУССКИЙ</option>
+            </select>
             <button
               onClick={() => setShowQrModal(true)}
               className="px-2.5 py-1.5 border border-border-focus rounded-xl bg-bg-sub hover:bg-bg-elevated text-text-sec hover:text-text-main transition-colors flex items-center gap-1.5 cursor-pointer text-[10px] tracking-wider uppercase font-medium"

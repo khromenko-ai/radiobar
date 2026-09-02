@@ -17,6 +17,9 @@ export const buildGuestUrl = (session: DinnerSession, isDevMode?: boolean): stri
   urlParams.set('act', session.currentActIndex.toString());
   urlParams.set('table', session.tableName);
   urlParams.set('status', session.status);
+  if (session.language) {
+    urlParams.set('lang', session.language);
+  }
   
   if (session.actStartedAt) urlParams.set('startedAt', session.actStartedAt.toString());
   if (session.pausedAt) urlParams.set('pausedAt', session.pausedAt.toString());

@@ -197,6 +197,11 @@ function GuestApp() {
       updateSession({ scenarioId: hostSession.scenarioId });
     }
 
+    // Update language if changed by host
+    if (hostSession.language && hostSession.language !== session.language) {
+      updateSession({ language: hostSession.language });
+    }
+
     // If host switched to a new act or moment, immediately jump guest screen to it
     if (hostSession.currentActIndex !== undefined && hostSession.currentActIndex !== lastHostActIndexRef.current) {
       lastHostActIndexRef.current = hostSession.currentActIndex;
@@ -219,7 +224,7 @@ function GuestApp() {
         updateSession({ state: 'END' });
       }
     }
-  }, [hostSession, session.scenarioId, session.currentActIndex, session.state]);
+  }, [hostSession, session.scenarioId, session.currentActIndex, session.state, session.language]);
 
   const validLanguage: Language = (session.language === 'EN' || session.language === 'ES' || session.language === 'RU') 
     ? session.language 
