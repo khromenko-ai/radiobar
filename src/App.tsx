@@ -13,20 +13,33 @@ import { HostApp } from './components/Host';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSessions, getSessions, saveSessions } from './lib/store';
 
-function TopActions({ session, updateSession, resetSession, toggleDevMode, leftContent, centerContent }: any) {
+function TopActions({ 
+  session, 
+  updateSession, 
+  resetSession, 
+  toggleDevMode, 
+  leftContent, 
+  centerContent,
+  isHostControlled,
+  tableName
+}: any) {
   return (
     <>
-      {leftContent && (
-        <div className="absolute top-4 left-6 z-50 flex items-center h-6">
-          {leftContent}
-        </div>
-      )}
+      <div className="absolute top-4 left-6 z-50 flex items-center h-6">
+        {leftContent ? leftContent : (
+          isHostControlled && tableName ? (
+            <span className="text-[10px] font-sans tracking-[0.2em] text-text-sub uppercase truncate max-w-[140px]">
+              {tableName}
+            </span>
+          ) : null
+        )}
+      </div>
       <div className="absolute top-4 right-6 z-50 flex items-center space-x-4 h-6">
         {session.devMode && (
           <div className="w-2 h-2 rounded-full bg-red-500" title="Dev Mode" />
         )}
         <FullscreenToggle />
-        <ThemeToggle onReset={resetSession} onDemo={toggleDevMode} />
+        <ThemeToggle onReset={isHostControlled ? () => {} : resetSession} onDemo={toggleDevMode} />
         <LanguageToggle 
           current={session.language} 
           onChange={(l: Language) => updateSession({ language: l })}
@@ -44,11 +57,15 @@ function TopActions({ session, updateSession, resetSession, toggleDevMode, leftC
 
 function GuestApp() {
   const { session, updateSession, resetSession, startScenario, beginActs, advanceAct, goToAct, endExperience, toggleDevMode } = useSession();
-  const { sessions } = useSessions();
+  const { sessions, updateSession: updateHostStoreSession, advanceSession: advanceHostStoreSession } = useSessions();
   const t = uiTranslations[session.language];
   const hostSession = session.hostSessionId ? sessions[session.hostSessionId] : null;
+  const isHostControlled = !!session.hostSessionId;
 
-  // Sync URL session and moment parameters
+  const lastHostActIndexRef = useRef<number | null>(null);
+  const lastHostStatusRef = useRef<string | null>(null);
+
+  // Sync URL session and moment parameters on initial load / QR scan
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sid = params.get('session');
@@ -61,6 +78,7 @@ function GuestApp() {
       const actIdx = actParam !== null ? parseInt(actParam, 10) : 0;
       const targetScenario = scenarioParam || 'first-date';
       const targetLang = (langParam === 'ES' || langParam === 'EN' || langParam === 'RU') ? langParam : session.language;
+      const validActIdx = isNaN(actIdx) ? 0 : actIdx;
 
       if (sid) {
         const storedSessions = getSessions();
@@ -69,55 +87,77 @@ function GuestApp() {
             id: sid,
             tableName: tableParam ? decodeURIComponent(tableParam) : `Table ${sid}`,
             scenarioId: targetScenario,
-            currentActIndex: isNaN(actIdx) ? 0 : actIdx,
+            currentActIndex: validActIdx,
             status: 'ACTIVE',
             actStartedAt: Date.now(),
             pausedAt: null
           };
           saveSessions(storedSessions);
-        } else if (actParam !== null && !isNaN(actIdx)) {
-          storedSessions[sid].currentActIndex = actIdx;
+        } else {
+          storedSessions[sid].currentActIndex = validActIdx;
           if (scenarioParam) storedSessions[sid].scenarioId = targetScenario;
           if (tableParam) storedSessions[sid].tableName = decodeURIComponent(tableParam);
           saveSessions(storedSessions);
         }
-
-        updateSession({
-          hostSessionId: sid,
-          scenarioId: targetScenario,
-          currentActIndex: isNaN(actIdx) ? 0 : actIdx,
-          state: 'ACTS',
-          actStartedAt: Date.now(),
-          language: targetLang,
-        });
-      } else if (scenarioParam) {
-        updateSession({
-          scenarioId: targetScenario,
-          currentActIndex: isNaN(actIdx) ? 0 : actIdx,
-          state: 'ACTS',
-          actStartedAt: Date.now(),
-          language: targetLang,
-        });
       }
+
+      lastHostActIndexRef.current = validActIdx;
+
+      updateSession({
+        hostSessionId: sid || null,
+        scenarioId: targetScenario,
+        currentActIndex: validActIdx,
+        maxActIndexReached: Math.max(session.maxActIndexReached || 0, validActIdx),
+        state: 'ACTS',
+        actStartedAt: Date.now(),
+        language: targetLang,
+      });
+
+      setIsNextActReady(false);
 
       // Clean URL after consuming to keep UI elegant
       window.history.replaceState({}, '', '/');
     }
   }, []);
 
-  const activeScenarioId = hostSession ? hostSession.scenarioId : session.scenarioId;
-  const activeActIndex = hostSession ? hostSession.currentActIndex : session.currentActIndex;
-  const activeActStartedAt = hostSession ? hostSession.actStartedAt : session.actStartedAt;
-  const isPaused = hostSession ? hostSession.status === 'PAUSED' : false;
-  const pausedAt = hostSession ? hostSession.pausedAt : null;
-  const isHostControlled = !!hostSession;
+  // Instant synchronization with hostSession changes
+  useEffect(() => {
+    if (!hostSession) return;
 
-  let activeState = session.state;
-  if (hostSession) {
-    if (hostSession.status === 'WAITING') activeState = 'INTRO';
-    else if (hostSession.status === 'ACTIVE' || hostSession.status === 'PAUSED') activeState = 'ACTS';
-    else if (hostSession.status === 'COMPLETED') activeState = 'END';
-  }
+    // Update scenario if changed by host
+    if (hostSession.scenarioId && hostSession.scenarioId !== session.scenarioId) {
+      updateSession({ scenarioId: hostSession.scenarioId });
+    }
+
+    // If host switched to a new act or moment, immediately jump guest screen to it
+    if (hostSession.currentActIndex !== undefined && hostSession.currentActIndex !== lastHostActIndexRef.current) {
+      lastHostActIndexRef.current = hostSession.currentActIndex;
+      updateSession({
+        currentActIndex: hostSession.currentActIndex,
+        maxActIndexReached: Math.max(session.maxActIndexReached || 0, hostSession.currentActIndex),
+        state: 'ACTS',
+      });
+      setIsNextActReady(false);
+    }
+
+    // Sync status changes from host
+    if (hostSession.status !== lastHostStatusRef.current) {
+      lastHostStatusRef.current = hostSession.status;
+      if (hostSession.status === 'WAITING' && session.state !== 'INTRO') {
+        updateSession({ state: 'INTRO' });
+      } else if ((hostSession.status === 'ACTIVE' || hostSession.status === 'PAUSED') && session.state !== 'ACTS') {
+        updateSession({ state: 'ACTS' });
+      } else if (hostSession.status === 'COMPLETED' && session.state !== 'END') {
+        updateSession({ state: 'END' });
+      }
+    }
+  }, [hostSession, session.scenarioId, session.currentActIndex, session.state, session.maxActIndexReached]);
+
+  const activeScenarioId = hostSession?.scenarioId || session.scenarioId;
+  const activeActIndex = session.currentActIndex;
+  const activeActStartedAt = hostSession?.actStartedAt || session.actStartedAt || Date.now();
+  const isPaused = hostSession?.status === 'PAUSED';
+  const pausedAt = hostSession?.pausedAt || null;
 
   const scenario = activeScenarioId ? scenariosData[session.language].find(s => s.id === activeScenarioId) : null;
   const [isNextActReady, setIsNextActReady] = useState(false);
@@ -129,18 +169,62 @@ function GuestApp() {
 
   const DURATION_MS = session.devMode ? 10000 : 10 * 60 * 1000;
 
+  // Maximum act unlocked by host or user progression
+  const maxUnlockedActIndex = Math.max(
+    session.maxActIndexReached || 0,
+    hostSession?.currentActIndex || 0
+  );
+
+  // If looking at a past completed act, next moment is immediately available to browse
+  const isPastAct = isHostControlled && hostSession && activeActIndex < hostSession.currentActIndex;
+
+  // Reset ready state when changing acts
+  useEffect(() => {
+    setIsNextActReady(false);
+  }, [activeActIndex, activeScenarioId]);
+
   // Ensure scroll is at the top whenever act index or state changes
   useEffect(() => {
     if (actsContainerRef.current) {
       actsContainerRef.current.scrollTop = 0;
     }
     window.scrollTo(0, 0);
-  }, [activeActIndex, activeState]);
+  }, [activeActIndex, session.state]);
+
+  const handleStartCourse = () => {
+    if (isHostControlled && session.hostSessionId) {
+      updateHostStoreSession(session.hostSessionId, {
+        status: 'ACTIVE',
+        currentActIndex: 0,
+        actStartedAt: Date.now(),
+        pausedAt: null
+      });
+    }
+    beginActs();
+  };
 
   const handleNextAct = () => {
     if (actsContainerRef.current) {
       actsContainerRef.current.scrollTop = 0;
     }
+
+    // If guest was looking at a past act, advancing moves them toward current unlocked act
+    if (activeActIndex < maxUnlockedActIndex) {
+      goToAct(activeActIndex + 1);
+      setIsNextActReady(false);
+      return;
+    }
+
+    if (isHostControlled && session.hostSessionId) {
+      if (scenario && activeActIndex < scenario.acts.length - 1) {
+        advanceHostStoreSession(session.hostSessionId);
+      } else {
+        updateHostStoreSession(session.hostSessionId, { status: 'COMPLETED' });
+      }
+      setIsNextActReady(false);
+      return;
+    }
+
     if (scenario && activeActIndex < scenario.acts.length - 1) {
       advanceAct();
       setIsNextActReady(false);
@@ -150,47 +234,52 @@ function GuestApp() {
   };
 
   const handleGoBack = () => {
-    if (isHostControlled) return;
     if (actsContainerRef.current) {
       actsContainerRef.current.scrollTop = 0;
     }
-    if (activeState === 'INFO') {
-      updateSession({ state: 'HOME' });
-    } else if (activeState === 'INTRO') {
-      updateSession({ state: 'HOME', scenarioId: null });
-    } else if (activeState === 'ACTS') {
-      if (activeActIndex === 0) {
-        // Return to scenario INTRO ("Первое блюдо")
-        updateSession({ state: 'INTRO' });
-      } else {
+
+    if (session.state === 'ACTS') {
+      if (activeActIndex > 0) {
+        // Guest can freely browse back through earlier acts
         goToAct(activeActIndex - 1);
-      }
-    } else if (activeState === 'END') {
-      if (scenario) {
-        updateSession({ state: 'ACTS', currentActIndex: scenario.acts.length - 1 });
+        setIsNextActReady(false);
       } else {
-        updateSession({ state: 'HOME' });
+        // Back to intro
+        updateSession({ state: 'INTRO' });
       }
+    } else if (session.state === 'END') {
+      if (scenario) {
+        goToAct(scenario.acts.length - 1);
+        updateSession({ state: 'ACTS' });
+      } else {
+        updateSession({ state: isHostControlled ? 'INTRO' : 'HOME' });
+      }
+    } else if (session.state === 'INFO') {
+      updateSession({ state: isHostControlled ? 'INTRO' : 'HOME' });
+    } else if (session.state === 'INTRO' && !isHostControlled) {
+      updateSession({ state: 'HOME', scenarioId: null });
     }
   };
 
   const handleGoForward = () => {
-    if (isHostControlled) return;
     if (actsContainerRef.current) {
       actsContainerRef.current.scrollTop = 0;
     }
-    if (activeState === 'INTRO') {
-      // Go forward into ACTS
-      beginActs();
-    } else if (activeState === 'ACTS') {
-      // Check if user has already reached a higher act earlier, or if next act is ready
-      const maxReached = session.maxActIndexReached || 0;
-      if (scenario && activeActIndex < maxReached) {
+
+    if (session.state === 'INTRO') {
+      handleStartCourse();
+    } else if (session.state === 'ACTS') {
+      // If the guest is browsing a past act, they can move forward freely up to maxUnlockedActIndex
+      if (activeActIndex < maxUnlockedActIndex) {
         goToAct(activeActIndex + 1);
-      } else if (isNextActReady && scenario && activeActIndex < scenario.acts.length - 1) {
-        handleNextAct();
-      } else if (isNextActReady && scenario && activeActIndex === scenario.acts.length - 1) {
-        endExperience();
+        setIsNextActReady(false);
+      } else if (session.devMode || isNextActReady || isPastAct) {
+        // Bleeding edge act ready
+        if (scenario && activeActIndex < scenario.acts.length - 1) {
+          handleNextAct();
+        } else if (scenario && activeActIndex === scenario.acts.length - 1) {
+          endExperience();
+        }
       }
     }
   };
@@ -230,12 +319,12 @@ function GuestApp() {
     touchStartX.current = null;
   };
 
-  // Trackpad horizontal scroll (two fingers left/right) navigation between acts & scenes
+  // Trackpad horizontal scroll navigation between acts & scenes
   const wheelAccumulatorXRef = useRef(0);
   const wheelNavCooldownRef = useRef(false);
 
   const handleContainerWheel = (e: React.WheelEvent) => {
-    if (activeState === 'HOME') return; // Handled by ScenarioDeck
+    if (session.state === 'HOME') return;
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.2 && Math.abs(e.deltaX) > 6) {
       if (wheelNavCooldownRef.current) return;
 
@@ -243,13 +332,11 @@ function GuestApp() {
       const HORIZONTAL_WHEEL_THRESHOLD = 35;
 
       if (wheelAccumulatorXRef.current > HORIZONTAL_WHEEL_THRESHOLD) {
-        // Swiped left (next)
         handleGoForward();
         wheelNavCooldownRef.current = true;
         wheelAccumulatorXRef.current = 0;
         setTimeout(() => { wheelNavCooldownRef.current = false; }, 400);
       } else if (wheelAccumulatorXRef.current < -HORIZONTAL_WHEEL_THRESHOLD) {
-        // Swiped right (back)
         handleGoBack();
         wheelNavCooldownRef.current = true;
         wheelAccumulatorXRef.current = 0;
@@ -266,7 +353,7 @@ function GuestApp() {
       
       <AnimatePresence mode="wait">
         
-        {activeState === 'HOME' && (
+        {session.state === 'HOME' && !isHostControlled && (
           <motion.div 
             key="home"
             initial={{ opacity: 0 }}
@@ -275,7 +362,14 @@ function GuestApp() {
             transition={{ duration: 1 }}
             className="h-full w-full flex-grow flex flex-col items-center justify-between pt-12 pb-6 px-6 overflow-hidden relative select-none"
           >
-            <TopActions session={session} updateSession={updateSession} resetSession={resetSession} toggleDevMode={toggleDevMode} />
+            <TopActions 
+              session={session} 
+              updateSession={updateSession} 
+              resetSession={resetSession} 
+              toggleDevMode={toggleDevMode} 
+              isHostControlled={isHostControlled}
+              tableName={hostSession?.tableName}
+            />
             <ScenarioDeck 
               language={session.language} 
               onSelect={(id) => {
@@ -298,7 +392,7 @@ function GuestApp() {
           </motion.div>
         )}
 
-        {activeState === 'INFO' && (
+        {session.state === 'INFO' && (
           <motion.div 
             key="info"
             initial={{ opacity: 0 }}
@@ -307,15 +401,22 @@ function GuestApp() {
             transition={{ duration: 0.8 }}
             className="flex-grow flex flex-col items-center justify-center pt-12 pb-12 px-6 relative overflow-y-auto hide-scrollbar"
           >
-            <TopActions session={session} updateSession={updateSession} resetSession={resetSession} toggleDevMode={toggleDevMode} />
+            <TopActions 
+              session={session} 
+              updateSession={updateSession} 
+              resetSession={resetSession} 
+              toggleDevMode={toggleDevMode}
+              isHostControlled={isHostControlled}
+              tableName={hostSession?.tableName}
+            />
             <GuestInfoCard 
               language={session.language} 
-              onBack={() => updateSession({ state: 'HOME' })} 
+              onBack={() => updateSession({ state: isHostControlled ? 'INTRO' : 'HOME' })} 
             />
           </motion.div>
         )}
 
-        {activeState === 'INTRO' && scenario && (
+        {session.state === 'INTRO' && scenario && (
           <motion.div 
             key="intro"
             ref={introContainerRef}
@@ -331,7 +432,14 @@ function GuestApp() {
               (e.currentTarget as HTMLDivElement).style.setProperty('--scroll-y', `${e.currentTarget.scrollTop}px`);
             }}
           >
-            <TopActions session={session} updateSession={updateSession} resetSession={resetSession} toggleDevMode={toggleDevMode} />
+            <TopActions 
+              session={session} 
+              updateSession={updateSession} 
+              resetSession={resetSession} 
+              toggleDevMode={toggleDevMode}
+              isHostControlled={isHostControlled}
+              tableName={hostSession?.tableName}
+            />
             <h2 className="text-2xl font-serif tracking-widest mb-12 flex-shrink-0">
               {scenario.title}
             </h2>
@@ -339,22 +447,16 @@ function GuestApp() {
               {scenario.introText}
             </p>
             <div className="flex flex-col items-center justify-end mt-auto w-full pb-2">
-              {isHostControlled ? (
-                <div className="text-[10px] font-sans tracking-widest text-text-sub uppercase animate-pulse mb-8">
-                  {t.waitFirstCourse}
-                </div>
-              ) : (
-                <ElasticPullTrigger 
-                  label={t.firstCourseReady}
-                  onTrigger={beginActs}
-                  containerRef={introContainerRef}
-                />
-              )}
+              <ElasticPullTrigger 
+                label={t.firstCourseReady}
+                onTrigger={handleStartCourse}
+                containerRef={introContainerRef}
+              />
             </div>
           </motion.div>
         )}
 
-        {activeState === 'ACTS' && scenario && (
+        {session.state === 'ACTS' && scenario && (
           <motion.div 
             key="acts"
             ref={actsContainerRef}
@@ -375,6 +477,8 @@ function GuestApp() {
               updateSession={updateSession} 
               resetSession={resetSession} 
               toggleDevMode={toggleDevMode}
+              isHostControlled={isHostControlled}
+              tableName={hostSession?.tableName}
               leftContent={
                 <span className="text-xs font-sans tracking-widest text-text-muted select-none font-medium">
                   {scenario.acts[activeActIndex]?.number}
@@ -393,39 +497,24 @@ function GuestApp() {
                 <ActCard act={scenario.acts[activeActIndex]} language={session.language} />
                 
                 <div className="w-full pt-8 pb-4 flex justify-center shrink-0">
-                  {activeActStartedAt && (!isNextActReady || isHostControlled) && ( 
-                    <Timer 
-                      actStartedAt={activeActStartedAt} 
-                      durationMs={DURATION_MS} 
-                      isPaused={isPaused}
-                      pausedAt={pausedAt}
-                      language={session.language}
-                      onComplete={() => setIsNextActReady(true)}
-                      isHostControlled={isHostControlled}
-                      isNextActReady={false}
-                    />
-                  )}
-                  {isNextActReady && !isHostControlled && (
-                    <Timer 
-                      actStartedAt={activeActStartedAt || 0}
-                      durationMs={DURATION_MS} 
-                      isPaused={isPaused}
-                      pausedAt={pausedAt}
-                      language={session.language}
-                      onComplete={() => {}}
-                      isHostControlled={isHostControlled}
-                      isNextActReady={true}
-                      handleNextAct={handleNextAct}
-                      containerRef={actsContainerRef}
-                    />
-                  )}
+                  <Timer 
+                    actStartedAt={isPastAct ? 0 : activeActStartedAt} 
+                    durationMs={DURATION_MS} 
+                    isPaused={isPastAct ? false : isPaused}
+                    pausedAt={isPastAct ? null : pausedAt}
+                    language={session.language}
+                    onComplete={() => setIsNextActReady(true)}
+                    isNextActReady={isNextActReady || isPastAct}
+                    handleNextAct={handleNextAct}
+                    containerRef={actsContainerRef}
+                  />
                 </div>
               </motion.div>
             </AnimatePresence>
           </motion.div>
         )}
 
-        {activeState === 'END' && (
+        {session.state === 'END' && (
           <motion.div 
             key="end"
             initial={{ opacity: 0 }}
@@ -437,7 +526,14 @@ function GuestApp() {
             onTouchCancel={handleTouchCancel}
             className="flex-grow flex flex-col items-center justify-center p-6 text-center relative overflow-hidden"
           >
-            <TopActions session={session} updateSession={updateSession} resetSession={resetSession} toggleDevMode={toggleDevMode} />
+            <TopActions 
+              session={session} 
+              updateSession={updateSession} 
+              resetSession={resetSession} 
+              toggleDevMode={toggleDevMode}
+              isHostControlled={isHostControlled}
+              tableName={hostSession?.tableName}
+            />
             <h2 className="text-xl font-serif tracking-widest text-text-main mb-8">
               {t.endTitle}
             </h2>

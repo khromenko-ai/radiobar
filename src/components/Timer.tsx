@@ -9,7 +9,6 @@ export function Timer({
   pausedAt,
   language,
   onComplete,
-  isHostControlled,
   isNextActReady,
   handleNextAct,
   containerRef
@@ -32,7 +31,11 @@ export function Timer({
     const updateTimer = () => {
       if (isPaused && pausedAt) {
         const elapsed = pausedAt - actStartedAt;
-        setRemaining(Math.max(0, durationMs - elapsed));
+        const timeLeft = Math.max(0, durationMs - elapsed);
+        setRemaining(timeLeft);
+        if (timeLeft <= 0) {
+          onComplete();
+        }
         return;
       }
       
@@ -41,7 +44,7 @@ export function Timer({
       const timeLeft = Math.max(0, durationMs - elapsed);
       setRemaining(timeLeft);
       
-      if (timeLeft === 0 && !isPaused) {
+      if (timeLeft <= 0 && !isPaused) {
         onComplete();
       }
     };
@@ -54,19 +57,8 @@ export function Timer({
   const minutes = Math.floor(remaining / 60000);
   const seconds = Math.floor((remaining % 60000) / 1000);
   const timeFormatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  
-  if (isHostControlled) {
-    if (remaining === 0) return <div className="h-16" />;
-    return (
-      <div className="flex items-center justify-center">
-        <span className="text-[10px] tracking-[0.2em] font-sans text-text-sub uppercase whitespace-nowrap transition-colors duration-1000">
-          {t.nextMomentIn} {timeFormatted}
-        </span>
-      </div>
-    );
-  }
 
-  if (isNextActReady) {
+  if (isNextActReady || remaining <= 0) {
     return (
       <div className="flex flex-col items-center w-full select-none">
         <ElasticPullTrigger 
