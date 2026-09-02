@@ -4,10 +4,12 @@ import { uiTranslations, scenariosData, Language } from '../data/content';
 
 export function ScenarioDeck({ 
   language, 
-  onSelect 
+  onSelect,
+  activeSessionScenarioId
 }: { 
   language: Language, 
-  onSelect: (id: string) => void 
+  onSelect: (id: string) => void,
+  activeSessionScenarioId?: string | null
 }) {
   const scenarios = scenariosData[language];
   const t = uiTranslations[language];
@@ -149,7 +151,17 @@ export function ScenarioDeck({
               <p className="text-xs sm:text-sm font-sans text-text-muted mb-6 sm:mb-10 tracking-wider uppercase">
                 {item.subtitle}
               </p>
-              <div className="w-8 h-[1px] bg-bg-border mb-6 sm:mb-10" />
+              {activeSessionScenarioId && item.id === activeSessionScenarioId ? (
+                <div className="flex items-center justify-center mb-6 sm:mb-10 w-28 mx-auto select-none pointer-events-none">
+                  <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
+                  <div className="mx-2 flex items-center justify-center">
+                    <div className="w-2 h-2 rotate-45 border border-text-main bg-bg-card shadow-sm" />
+                  </div>
+                  <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
+                </div>
+              ) : (
+                <div className="w-8 h-[1px] bg-bg-border mb-6 sm:mb-10" />
+              )}
               <p className="text-xs sm:text-sm font-sans text-text-sec leading-relaxed max-w-[240px]">
                 {item.description}
               </p>

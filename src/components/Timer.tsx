@@ -2,6 +2,54 @@ import React, { useState, useEffect } from 'react';
 import { uiTranslations, Language } from '../data/content';
 import { ElasticPullTrigger } from './ElasticPullTrigger';
 
+export function useActTimer({
+  actStartedAt,
+  durationMs,
+  isPaused,
+  pausedAt,
+  onComplete,
+}: {
+  actStartedAt?: number | null;
+  durationMs: number;
+  isPaused?: boolean;
+  pausedAt?: number | null;
+  onComplete?: () => void;
+}) {
+  const calculateRemaining = () => {
+    if (actStartedAt === 0) return 0;
+    if (!actStartedAt) return durationMs;
+    if (isPaused && pausedAt) {
+      const elapsed = pausedAt - actStartedAt;
+      return Math.max(0, durationMs - elapsed);
+    }
+    const elapsed = Date.now() - actStartedAt;
+    return Math.max(0, durationMs - elapsed);
+  };
+
+  const [remaining, setRemaining] = useState<number>(calculateRemaining);
+
+  useEffect(() => {
+    const updateTimer = () => {
+      const timeLeft = calculateRemaining();
+      setRemaining(timeLeft);
+      if (timeLeft <= 0 && onComplete) {
+        onComplete();
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 500);
+    return () => clearInterval(interval);
+  }, [actStartedAt, durationMs, isPaused, pausedAt, onComplete]);
+
+  const minutes = Math.floor(remaining / 60000);
+  const seconds = Math.floor((remaining % 60000) / 1000);
+  const timeFormatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  const isExpired = remaining <= 0;
+
+  return { remaining, minutes, seconds, timeFormatted, isExpired };
+}
+
 export function Timer({ 
   actStartedAt, 
   durationMs, 
@@ -24,41 +72,16 @@ export function Timer({
   handleNextAct?: () => void,
   containerRef?: React.RefObject<HTMLDivElement | null>
 }) {
-  const [remaining, setRemaining] = useState(durationMs);
+  const { remaining, timeFormatted, isExpired } = useActTimer({
+    actStartedAt,
+    durationMs,
+    isPaused,
+    pausedAt,
+    onComplete
+  });
   const t = uiTranslations[language];
 
-  useEffect(() => {
-    const updateTimer = () => {
-      if (isPaused && pausedAt) {
-        const elapsed = pausedAt - actStartedAt;
-        const timeLeft = Math.max(0, durationMs - elapsed);
-        setRemaining(timeLeft);
-        if (timeLeft <= 0) {
-          onComplete();
-        }
-        return;
-      }
-      
-      const now = Date.now();
-      const elapsed = now - actStartedAt;
-      const timeLeft = Math.max(0, durationMs - elapsed);
-      setRemaining(timeLeft);
-      
-      if (timeLeft <= 0 && !isPaused) {
-        onComplete();
-      }
-    };
-
-    updateTimer(); // Initial check
-    const interval = setInterval(updateTimer, 500); // Check every half second
-    return () => clearInterval(interval);
-  }, [actStartedAt, durationMs, isPaused, pausedAt, onComplete]);
-
-  const minutes = Math.floor(remaining / 60000);
-  const seconds = Math.floor((remaining % 60000) / 1000);
-  const timeFormatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-
-  if (isNextActReady || remaining <= 0) {
+  if (isNextActReady || isExpired) {
     return (
       <div className="flex flex-col items-center w-full select-none">
         <ElasticPullTrigger 

@@ -6,6 +6,7 @@ import { LanguageToggle } from './LanguageToggle';
 import { ThemeToggle } from './ThemeToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { CardsIcon } from './CardsIcon';
+import { useActTimer } from './Timer';
 import { QRCodeSVG } from 'qrcode.react';
 import { QrCode, X, Copy, Check, Trash2 } from 'lucide-react';
 
@@ -51,7 +52,7 @@ export function HostApp() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-main text-text-main font-sans overflow-y-auto">
+    <div className="h-full w-full bg-bg-main text-text-main font-sans overflow-y-auto overflow-x-hidden">
       {selectedSessionId ? (
         <HostSessionControl 
           sessionId={selectedSessionId} 
@@ -106,10 +107,10 @@ function HostTopBar({
         )}
         <button 
           onClick={onExit}
-          className="p-1.5 rounded-lg border border-border-main hover:border-border-focus text-text-sub hover:text-text-main transition-colors flex items-center justify-center cursor-pointer"
+          className="flex items-center justify-center text-text-muted hover:text-text-main transition-colors h-5 w-5 select-none cursor-pointer"
           title="Exit to Guest Experience"
         >
-          <CardsIcon className="w-4 h-4" />
+          <CardsIcon size={16} />
         </button>
         {title && (
           <span className="text-[10px] tracking-[0.2em] text-text-muted uppercase font-medium">
@@ -130,6 +131,77 @@ function HostTopBar({
           onDevModeToggle={toggleDevMode}
         />
       </div>
+    </div>
+  );
+}
+
+function HostSessionWidget({
+  session: s,
+  durationMs,
+  language,
+  onSelect,
+  onQr,
+}: {
+  key?: string;
+  session: DinnerSession;
+  durationMs: number;
+  language: Language;
+  onSelect: () => void;
+  onQr: () => void;
+}) {
+  const t = uiTranslations[language];
+  const { timeFormatted, isExpired } = useActTimer({
+    actStartedAt: s.actStartedAt,
+    durationMs,
+    isPaused: s.status === 'PAUSED',
+    pausedAt: s.pausedAt,
+  });
+
+  return (
+    <div 
+      className="border border-border-main rounded-2xl p-5 bg-bg-sub hover:border-border-focus transition-colors flex justify-between items-center group cursor-pointer"
+      onClick={onSelect}
+    >
+      <div className="flex-1 min-w-0 pr-4">
+        <div className="flex items-center gap-3 mb-1.5">
+          <span className="text-base font-serif tracking-wide text-text-main font-medium">{s.tableName}</span>
+          <span className={`text-[9px] tracking-widest uppercase px-1.5 py-0.5 rounded ${
+            s.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 
+            s.status === 'PAUSED' ? 'bg-yellow-500/10 text-yellow-400' : 
+            'bg-zinc-500/10 text-text-sub'
+          }`}>
+            {s.status}
+          </span>
+        </div>
+        <div className="text-[10px] tracking-[0.15em] text-text-muted uppercase mb-2 truncate">
+          {scenariosData[language].find(x => x.id === s.scenarioId)?.title}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] tracking-[0.15em] text-text-sub uppercase font-medium">
+            {t.hostAct} {(s.currentActIndex + 1).toString().padStart(2, '0')}
+          </span>
+          <span className="text-[10px] text-border-focus select-none">•</span>
+          <span className={`text-[10px] font-mono tracking-wider px-2 py-0.5 rounded ${
+            s.status === 'WAITING' ? 'text-text-muted bg-bg-elevated/50' :
+            s.status === 'PAUSED' ? 'bg-yellow-500/10 text-yellow-400 font-medium' :
+            isExpired ? 'bg-text-main/10 text-text-main font-semibold' :
+            'bg-bg-elevated text-text-main font-medium border border-border-main/60'
+          }`}>
+            {s.status === 'WAITING' ? (language === 'RU' ? 'ОЖИДАНИЕ' : (language === 'ES' ? 'EN ESPERA' : 'WAITING')) : timeFormatted}
+          </span>
+        </div>
+      </div>
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onQr();
+        }}
+        className="p-3 border border-border-main rounded-xl hover:border-border-focus hover:bg-bg-elevated text-text-sub hover:text-text-main transition-colors flex items-center justify-center cursor-pointer"
+        title={t.hostQrCode}
+      >
+        <QrCode size={18} />
+      </button>
     </div>
   );
 }
@@ -155,6 +227,8 @@ function HostDashboard({
   const [newScenario, setNewScenario] = useState('first-date');
   const [qrSession, setQrSession] = useState<DinnerSession | null>(null);
 
+  const durationMs = sessionState.devMode ? 10000 : 10 * 60 * 1000;
+
   const sessionValues = Object.values(sessions) as DinnerSession[];
   const activeSessions = sessionValues.filter(s => s.status !== 'COMPLETED');
   const completedSessions = sessionValues.filter(s => s.status === 'COMPLETED');
@@ -167,7 +241,7 @@ function HostDashboard({
   };
 
   return (
-    <div className="max-w-md mx-auto p-6 flex flex-col justify-between min-h-screen">
+    <div className="max-w-md mx-auto p-6 min-h-full flex flex-col justify-between pb-20">
       <HostTopBar 
         onExit={onExit} 
         sessionState={sessionState} 
@@ -216,37 +290,14 @@ function HostDashboard({
       
       <div className="flex flex-col space-y-4 mb-10">
         {activeSessions.map(s => (
-          <div 
-            key={s.id} 
-            className="border border-border-main rounded-2xl p-5 bg-bg-sub hover:border-border-focus transition-colors flex justify-between items-center group cursor-pointer"
-            onClick={() => onSelectSession(s.id)}
-          >
-            <div className="flex-1 min-w-0 pr-4">
-              <div className="flex items-center gap-3 mb-1.5">
-                <span className="text-base font-serif tracking-wide text-text-main font-medium">{s.tableName}</span>
-                <span className={`text-[9px] tracking-widest uppercase px-1.5 py-0.5 rounded ${s.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-400'}`}>
-                  {s.status}
-                </span>
-              </div>
-              <div className="text-[10px] tracking-[0.15em] text-text-muted uppercase mb-1 truncate">
-                {scenariosData[language].find(x => x.id === s.scenarioId)?.title}
-              </div>
-              <div className="text-[10px] tracking-[0.15em] text-text-sub uppercase">
-                {t.hostAct} {(s.currentActIndex + 1).toString().padStart(2, '0')}
-              </div>
-            </div>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setQrSession(s);
-              }}
-              className="p-3 border border-border-main rounded-xl hover:border-border-focus hover:bg-bg-elevated text-text-sub hover:text-text-main transition-colors flex items-center justify-center cursor-pointer"
-              title={t.hostQrCode}
-            >
-              <QrCode size={18} />
-            </button>
-          </div>
+          <HostSessionWidget
+            key={s.id}
+            session={s}
+            durationMs={durationMs}
+            language={language}
+            onSelect={() => onSelectSession(s.id)}
+            onQr={() => setQrSession(s)}
+          />
         ))}
       </div>
 
@@ -347,6 +398,14 @@ function HostSessionControl({
   const scenario = scenariosData[language].find(s => s.id === session.scenarioId);
   if (!scenario) return null;
 
+  const durationMs = sessionState.devMode ? 10000 : 10 * 60 * 1000;
+  const { timeFormatted, isExpired } = useActTimer({
+    actStartedAt: session.actStartedAt,
+    durationMs,
+    isPaused: session.status === 'PAUSED',
+    pausedAt: session.pausedAt,
+  });
+
   const currentAct = scenario.acts[session.currentActIndex];
   const nextAct = scenario.acts[session.currentActIndex + 1];
 
@@ -382,16 +441,20 @@ function HostSessionControl({
     }
   };
 
+  const handleRestartTimer = () => {
+    updateSession(session.id, {
+      actStartedAt: Date.now(),
+      status: 'ACTIVE',
+      pausedAt: null
+    });
+  };
+
   // Construct guest URL with moment precision
   const baseUrl = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://radio.khromenko.com';
   const guestUrl = `${baseUrl}/?session=${session.id}&scenario=${session.scenarioId}&act=${session.currentActIndex}&table=${encodeURIComponent(session.tableName)}`;
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(guestUrl);
-  };
-
   return (
-    <div className="max-w-md mx-auto p-6 min-h-screen flex flex-col justify-between">
+    <div className="max-w-md mx-auto p-6 min-h-full flex flex-col justify-between pb-24">
       <div>
         <HostTopBar 
           onExit={onExit} 
@@ -405,30 +468,52 @@ function HostSessionControl({
 
         {/* HEADER INFO */}
         <div className="flex justify-between items-start mb-8 pb-4 border-b border-border-main">
-          <div>
+          <div className="flex-1 min-w-0 pr-3">
             <span className="text-xl font-serif tracking-wide text-text-main font-medium">{session.tableName}</span>
-            <div className="text-[10px] tracking-[0.2em] text-text-sub mt-1 uppercase">
+            <div className="text-[10px] tracking-[0.2em] text-text-sub mt-1 uppercase truncate">
               {scenario.title}
             </div>
           </div>
-          <span className={`text-[9px] tracking-widest uppercase px-2 py-1 rounded font-medium ${
-            session.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 
-            session.status === 'PAUSED' ? 'bg-yellow-500/10 text-yellow-400' : 
-            'bg-zinc-500/10 text-text-sub'
-          }`}>
-            {session.status}
-          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => setShowQrModal(true)}
+              className="px-2.5 py-1.5 border border-border-focus rounded-xl bg-bg-sub hover:bg-bg-elevated text-text-sec hover:text-text-main transition-colors flex items-center gap-1.5 cursor-pointer text-[10px] tracking-wider uppercase font-medium"
+              title={t.hostQrCode}
+            >
+              <QrCode size={14} />
+              <span>QR</span>
+            </button>
+            <span className={`text-[9px] tracking-widest uppercase px-2 py-1 rounded font-medium ${
+              session.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 
+              session.status === 'PAUSED' ? 'bg-yellow-500/10 text-yellow-400' : 
+              'bg-zinc-500/10 text-text-sub'
+            }`}>
+              {session.status}
+            </span>
+          </div>
         </div>
 
         {/* CURRENT MOMENT CARD */}
         <div className="border border-border-main rounded-2xl p-6 bg-bg-sub mb-8 shadow-sm">
           <div className="flex justify-between items-center mb-6">
-            <span className="text-[10px] tracking-[0.2em] text-text-muted uppercase">
+            <span className="text-[10px] tracking-[0.2em] text-text-muted uppercase font-medium">
               {t.hostAct} {(session.currentActIndex + 1).toString().padStart(2, '0')} / {scenario.acts.length.toString().padStart(2, '0')}
             </span>
-            <span className="text-[10px] tracking-[0.2em] text-text-sub font-mono uppercase">
-              {currentAct?.theme}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] font-mono tracking-wider px-2 py-0.5 rounded font-medium ${
+                session.status === 'WAITING' ? 'text-text-muted bg-bg-elevated/60' :
+                session.status === 'PAUSED' ? 'bg-yellow-500/10 text-yellow-400' :
+                isExpired ? 'bg-text-main/10 text-text-main font-semibold' :
+                'bg-bg-elevated text-text-main border border-border-main font-medium'
+              }`}>
+                {session.status === 'WAITING' ? (language === 'RU' ? 'ОЖИДАНИЕ' : (language === 'ES' ? 'EN ESPERA' : 'WAITING')) : timeFormatted}
+              </span>
+              {currentAct?.theme && (
+                <span className="text-[10px] tracking-[0.2em] text-text-sub font-mono uppercase hidden sm:inline">
+                  {currentAct.theme}
+                </span>
+              )}
+            </div>
           </div>
 
           <h3 className="text-xl font-serif tracking-wide mb-3 text-text-main font-medium">{currentAct?.dishName}</h3>
@@ -446,6 +531,27 @@ function HostSessionControl({
                 <div className="text-xs font-sans text-text-sub leading-relaxed">{currentAct?.instruction}</div>
               </div>
             )}
+            <div className="flex items-center justify-between pt-2">
+              <div className="text-[9px] tracking-[0.2em] text-text-sub uppercase font-medium">{t.hostTimeRemaining}</div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-mono tracking-widest ${
+                  session.status === 'PAUSED' ? 'text-yellow-400' :
+                  isExpired ? 'text-text-main font-bold' :
+                  'text-text-main font-medium'
+                }`}>
+                  {session.status === 'WAITING' ? (language === 'RU' ? 'ОЖИДАНИЕ СТАРТА' : (language === 'ES' ? 'EN ESPERA' : 'WAITING')) : (isExpired ? (language === 'RU' ? '00:00 (ГОТОВО)' : '00:00 (READY)') : timeFormatted)}
+                </span>
+                {session.status === 'ACTIVE' && (
+                  <button 
+                    onClick={handleRestartTimer}
+                    className="text-[9px] font-sans tracking-wider text-text-muted hover:text-text-main uppercase transition-colors ml-1 cursor-pointer"
+                    title={t.hostRestartTimer}
+                  >
+                    ↺
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

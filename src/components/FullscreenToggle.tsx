@@ -107,7 +107,7 @@ export function FullscreenToggle() {
         e.stopPropagation();
         toggleFullscreen();
       }}
-      className="text-text-sub hover:text-text-main transition-colors p-1 flex items-center justify-center cursor-pointer select-none"
+      className="flex items-center justify-center text-text-muted hover:text-text-main transition-colors h-5 w-5 select-none cursor-pointer"
       title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
       aria-label="Toggle Fullscreen"
     >

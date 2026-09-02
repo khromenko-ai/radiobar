@@ -16,7 +16,7 @@ import { useSessions, getSessions, saveSessions } from './lib/store';
 function TopActions({ 
   session, 
   updateSession, 
-  resetSession, 
+  onReset, 
   toggleDevMode, 
   leftContent, 
   centerContent,
@@ -39,7 +39,7 @@ function TopActions({
           <div className="w-2 h-2 rounded-full bg-red-500" title="Dev Mode" />
         )}
         <FullscreenToggle />
-        <ThemeToggle onReset={isHostControlled ? () => {} : resetSession} onDemo={toggleDevMode} />
+        <ThemeToggle onReset={onReset} onDemo={toggleDevMode} />
         <LanguageToggle 
           current={session.language} 
           onChange={(l: Language) => updateSession({ language: l })}
@@ -161,6 +161,11 @@ function GuestApp() {
 
   const scenario = activeScenarioId ? scenariosData[session.language].find(s => s.id === activeScenarioId) : null;
   const [isNextActReady, setIsNextActReady] = useState(false);
+
+  const handleThemeTripleClick = () => {
+    // Triple click on theme button allows navigating to main menu (deck) even during a session
+    updateSession({ state: 'HOME' });
+  };
 
   const touchStartY = useRef<number | null>(null);
   const touchStartX = useRef<number | null>(null);
@@ -353,7 +358,7 @@ function GuestApp() {
       
       <AnimatePresence mode="wait">
         
-        {session.state === 'HOME' && !isHostControlled && (
+        {session.state === 'HOME' && (
           <motion.div 
             key="home"
             initial={{ opacity: 0 }}
@@ -365,16 +370,32 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
-              resetSession={resetSession} 
+              onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode} 
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
             />
             <ScenarioDeck 
               language={session.language} 
+              activeSessionScenarioId={activeScenarioId}
               onSelect={(id) => {
                 if (id === 'INFO_CARD') {
                   updateSession({ state: 'INFO' });
+                } else if (id === activeScenarioId) {
+                  // Returning to current ongoing session
+                  if (hostSession) {
+                    if (hostSession.status === 'WAITING') {
+                      updateSession({ state: 'INTRO' });
+                    } else if (hostSession.status === 'COMPLETED') {
+                      updateSession({ state: 'END' });
+                    } else {
+                      updateSession({ state: 'ACTS' });
+                    }
+                  } else {
+                    updateSession({ 
+                      state: (session.currentActIndex > 0 || session.maxActIndexReached > 0) ? 'ACTS' : 'INTRO' 
+                    });
+                  }
                 } else {
                   startScenario(id);
                 }
@@ -404,7 +425,7 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
-              resetSession={resetSession} 
+              onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
@@ -435,7 +456,7 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
-              resetSession={resetSession} 
+              onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
@@ -475,7 +496,7 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
-              resetSession={resetSession} 
+              onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
@@ -529,7 +550,7 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
-              resetSession={resetSession} 
+              onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
