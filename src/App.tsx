@@ -26,6 +26,7 @@ function ScrollToTopOnMount({ containerRef }: { containerRef: React.RefObject<HT
 function TopActions({ 
   session, 
   updateSession, 
+  updateHostStoreSession,
   onReset, 
   toggleDevMode, 
   leftContent, 
@@ -52,7 +53,12 @@ function TopActions({
         <ThemeToggle onReset={onReset} onDemo={toggleDevMode} />
         <LanguageToggle 
           current={session.language} 
-          onChange={(l: Language) => updateSession({ language: l })}
+          onChange={(l: Language) => {
+            updateSession({ language: l });
+            if (session.hostSessionId && updateHostStoreSession) {
+              updateHostStoreSession(session.hostSessionId, { language: l });
+            }
+          }}
           onDevModeToggle={toggleDevMode}
         />
       </div>
@@ -469,8 +475,9 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
+              updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
-              toggleDevMode={toggleDevMode} 
+              toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
             />
@@ -524,6 +531,7 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
+              updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
@@ -555,6 +563,7 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
+              updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
@@ -595,6 +604,7 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
+              updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
               isHostControlled={isHostControlled}
