@@ -63,6 +63,7 @@ function TopActions({
           }}
           onDevModeToggle={toggleDevMode}
           onExitSession={onExitSession}
+          isDevMode={session.devMode}
         />
       </div>
       {centerContent && (

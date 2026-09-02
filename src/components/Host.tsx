@@ -134,6 +134,7 @@ function HostTopBar({
             clearAllSiteData();
             onExit();
           }}
+          isDevMode={sessionState.devMode}
         />
       </div>
     </div>
