@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { uiTranslations, Language } from '../data/content';
+import { ElasticPullTrigger } from './ElasticPullTrigger';
 
 export function Timer({ 
   actStartedAt, 
@@ -11,8 +12,7 @@ export function Timer({
   isHostControlled,
   isNextActReady,
   handleNextAct,
-  pullDistance = 0,
-  pullProgress = 0
+  containerRef
 }: { 
   actStartedAt: number, 
   durationMs: number, 
@@ -23,8 +23,7 @@ export function Timer({
   isHostControlled?: boolean,
   isNextActReady?: boolean,
   handleNextAct?: () => void,
-  pullDistance?: number,
-  pullProgress?: number
+  containerRef?: React.RefObject<HTMLDivElement | null>
 }) {
   const [remaining, setRemaining] = useState(durationMs);
   const t = uiTranslations[language];
@@ -68,47 +67,24 @@ export function Timer({
   }
 
   if (isNextActReady) {
-    // The parent container in App.tsx translates up by pullDistance * 0.5.
-    // To keep the line anchored to the bottom visually, it needs to grow by exactly that amount.
-    // We use scaleY from the top so it visually stretches downwards.
-    const scaleFactor = 1 + (pullDistance * 0.9) / 64;
-
     return (
-      <button 
-        onClick={handleNextAct} 
-        className="group flex flex-col items-center cursor-pointer select-none focus:outline-none"
-      >
-        <span className={`text-[10px] font-sans tracking-widest uppercase mb-4 transition-colors duration-300 ${
-          pullProgress >= 1 ? 'text-text-main font-semibold' : 'text-text-sub group-hover:text-text-main'
-        }`}>
-          {t.nextMoment}
-        </span>
-        <div 
-          className={`w-[1px] transition-colors ${
-            pullProgress >= 1 
-              ? 'bg-text-main shadow-[0_0_8px_rgba(255,255,255,0.4)]' 
-              : 'bg-border-focus group-hover:bg-text-main'
-          }`} 
-          style={{
-            height: '64px',
-            transform: `scaleY(${scaleFactor})`,
-            transformOrigin: 'top',
-            transition: pullDistance > 0 ? 'background-color 0.2s' : 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s'
-          }}
+      <div className="flex flex-col items-center w-full select-none">
+        <ElasticPullTrigger 
+          label={t.nextMoment}
+          onTrigger={handleNextAct || (() => {})}
+          containerRef={containerRef}
         />
-      </button>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center justify-end w-full select-none">
+    <div className="flex flex-col items-center w-full select-none">
       <div className="flex items-center justify-center">
         <span className="text-[10px] font-sans tracking-[0.2em] text-text-sub uppercase whitespace-nowrap">
           {t.nextMomentIn} {timeFormatted}
         </span>
       </div>
-      
-      <div className="w-[1px] h-16 mt-4 bg-transparent opacity-0" />
     </div>
   );
 }

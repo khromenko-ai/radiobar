@@ -3,21 +3,20 @@ import { Maximize, Minimize } from 'lucide-react';
 
 export function isStandaloneMode(): boolean {
   if (typeof window === 'undefined') return false;
+  // Only true mobile standalone PWAs should consider hiding the native fullscreen button
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  if (!isMobile) return false;
+
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
-    window.matchMedia('(display-mode: fullscreen)').matches ||
-    (window.navigator as any).standalone === true ||
-    document.referrer.includes('android-app://')
+    (window.navigator as any).standalone === true
   );
 }
 
 export function FullscreenToggle() {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    setIsStandalone(isStandaloneMode());
-
     const checkState = () => {
       const isNative = !!(
         document.fullscreenElement ||
@@ -25,7 +24,7 @@ export function FullscreenToggle() {
         (document as any).mozFullScreenElement ||
         (document as any).msFullscreenElement
       );
-      const isCss = document.body.classList.contains('is-css-fullscreen');
+      const isCss = document.body.classList.contains('is-css-fullscreen') || document.documentElement.classList.contains('is-css-fullscreen');
       setIsFullscreen(isNative || isCss);
     };
 
@@ -44,10 +43,6 @@ export function FullscreenToggle() {
       document.removeEventListener('MSFullscreenChange', checkState);
     };
   }, []);
-
-  if (isStandalone) {
-    return null;
-  }
 
   const toggleFullscreen = async () => {
     const doc = document as any;

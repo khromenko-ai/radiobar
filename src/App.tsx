@@ -6,6 +6,7 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { ScenarioDeck } from './components/ScenarioDeck';
 import { ActCard } from './components/ActCard';
 import { Timer } from './components/Timer';
+import { ElasticPullTrigger } from './components/ElasticPullTrigger';
 import { GuestInfoCard } from './components/GuestInfoCard';
 import { FullscreenToggle } from './components/FullscreenToggle';
 import { HostApp } from './components/Host';
@@ -123,13 +124,8 @@ function GuestApp() {
 
   const touchStartY = useRef<number | null>(null);
   const touchStartX = useRef<number | null>(null);
-  const isPullingRef = useRef(false);
-  const pullAnchorY = useRef<number | null>(null);
+  const introContainerRef = useRef<HTMLDivElement | null>(null);
   const actsContainerRef = useRef<HTMLDivElement | null>(null);
-  const [pullDistance, setPullDistance] = useState(0);
-  const PULL_THRESHOLD = 130;
-  const pullProgress = Math.min(1, Math.max(0, pullDistance / PULL_THRESHOLD));
-  const wheelTimeoutRef = useRef<any>(null);
 
   const DURATION_MS = session.devMode ? 10000 : 10 * 60 * 1000;
 
@@ -199,192 +195,74 @@ function GuestApp() {
     }
   };
 
-  // Helper to start gesture tracking
-  const onGestureStart = (clientX: number, clientY: number, target: HTMLElement | null) => {
-    touchStartX.current = clientX;
-    touchStartY.current = clientY;
-    isPullingRef.current = false;
-    pullAnchorY.current = null;
-    setPullDistance(0);
-
-    if (target) {
-      const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight <= 4;
-      if (isAtBottom) {
-        pullAnchorY.current = clientY;
-      }
+  // Horizontal swipe navigation (left/right between acts)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
     }
   };
 
-  // Helper for gesture movement with smooth elastic resistance
-  const onGestureMove = (clientX: number, clientY: number, target: HTMLElement | null) => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStartY.current === null || touchStartX.current === null) return;
+    if (e.changedTouches.length === 0) return;
 
-    const isActionReady = (activeState === 'INTRO' && !isHostControlled) ||
-                          (activeState === 'ACTS' && isNextActReady && !isHostControlled);
-
-    if (!target) return;
-    const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight <= 4;
-
-    if (!isAtBottom) {
-      // Normal content scrolling inside card
-      pullAnchorY.current = clientY;
-      isPullingRef.current = false;
-      setPullDistance(0);
-      return;
-    }
-
-    // When at bottom, start measuring pull distance from the point we reached bottom
-    if (pullAnchorY.current === null) {
-      pullAnchorY.current = clientY;
-    }
-
-    const dy = pullAnchorY.current - clientY; // positive when dragging finger UP
-    const dx = Math.abs(clientX - touchStartX.current);
-
-    if (isActionReady && dy > 0 && dy > dx * 0.8) {
-      isPullingRef.current = true;
-      // Smooth rubberband formula: direct response up to threshold, then soft damping beyond
-      let visualDistance = 0;
-      if (dy <= PULL_THRESHOLD) {
-        visualDistance = dy;
-      } else {
-        visualDistance = PULL_THRESHOLD + (dy - PULL_THRESHOLD) * 0.45;
-      }
-      setPullDistance(Math.min(visualDistance, PULL_THRESHOLD + 70));
-    } else if (dy <= 0) {
-      isPullingRef.current = false;
-      setPullDistance(0);
-    }
-  };
-
-  // Helper for gesture release
-  const onGestureEnd = (clientX: number, clientY: number) => {
-    if (touchStartY.current === null || touchStartX.current === null) {
-      setPullDistance(0);
-      isPullingRef.current = false;
-      pullAnchorY.current = null;
-      return;
-    }
-
-    const deltaX = touchStartX.current - clientX;
-    const deltaY = touchStartY.current - clientY;
+    const deltaX = touchStartX.current - e.changedTouches[0].clientX;
+    const deltaY = touchStartY.current - e.changedTouches[0].clientY;
     const absX = Math.abs(deltaX);
     const absY = Math.abs(deltaY);
 
-    const SWIPE_THRESHOLD = 55;
-
-    // Horizontal swipe navigation (left/right) when not engaged in pulling
-    if (absX > SWIPE_THRESHOLD && absX > absY * 1.5 && pullDistance < 25) {
+    const SWIPE_THRESHOLD = 60;
+    if (absX > SWIPE_THRESHOLD && absX > absY * 1.5) {
       if (deltaX < 0) {
         handleGoBack();
       } else {
         handleGoForward();
       }
-    } 
-    // Vertical rubber-band trigger
-    else if (pullDistance >= PULL_THRESHOLD || pullProgress >= 0.95) {
-      if (activeState === 'INTRO' && !isHostControlled) {
-        beginActs();
-      } else if (activeState === 'ACTS' && isNextActReady && !isHostControlled) {
-        handleNextAct();
-      }
     }
 
-    setPullDistance(0);
-    isPullingRef.current = false;
     touchStartY.current = null;
     touchStartX.current = null;
-    pullAnchorY.current = null;
-  };
-
-  // Pointer event handlers (Mouse / Trackpad / Stylus)
-  const isPointerDownRef = useRef(false);
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return; // let TouchEvents handle mobile touches to prevent double triggers
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    isPointerDownRef.current = true;
-    onGestureStart(e.clientX, e.clientY, e.currentTarget as HTMLElement);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (!isPointerDownRef.current) return;
-    onGestureMove(e.clientX, e.clientY, e.currentTarget as HTMLElement);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') return;
-    if (!isPointerDownRef.current) return;
-    isPointerDownRef.current = false;
-    onGestureEnd(e.clientX, e.clientY);
-  };
-
-  const handlePointerCancel = () => {
-    isPointerDownRef.current = false;
-    setPullDistance(0);
-    isPullingRef.current = false;
-    touchStartY.current = null;
-    touchStartX.current = null;
-    pullAnchorY.current = null;
-  };
-
-  // Touch event handlers (Mobile Safari / Chrome)
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      onGestureStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget as HTMLElement);
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      onGestureMove(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget as HTMLElement);
-    }
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (e.changedTouches.length > 0) {
-      onGestureEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-    }
   };
 
   const handleTouchCancel = () => {
-    setPullDistance(0);
-    isPullingRef.current = false;
     touchStartY.current = null;
     touchStartX.current = null;
-    pullAnchorY.current = null;
   };
 
-  // Mouse wheel / Trackpad pull handling
-  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    const isActionReady = (activeState === 'INTRO' && !isHostControlled) ||
-                          (activeState === 'ACTS' && isNextActReady && !isHostControlled);
-    if (!isActionReady) return;
+  // Trackpad horizontal scroll (two fingers left/right) navigation between acts & scenes
+  const wheelAccumulatorXRef = useRef(0);
+  const wheelNavCooldownRef = useRef(false);
 
-    const target = e.currentTarget;
-    const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight <= 5;
+  const handleContainerWheel = (e: React.WheelEvent) => {
+    if (activeState === 'HOME') return; // Handled by ScenarioDeck
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.2 && Math.abs(e.deltaX) > 6) {
+      if (wheelNavCooldownRef.current) return;
 
-    if (e.deltaY > 0 && isAtBottom) {
-      setPullDistance(prev => {
-        const next = Math.min(prev + e.deltaY * 0.6, PULL_THRESHOLD + 30);
-        if (next >= PULL_THRESHOLD) {
-          if (activeState === 'INTRO') beginActs();
-          else if (activeState === 'ACTS') handleNextAct();
-          return 0;
-        }
-        return next;
-      });
+      wheelAccumulatorXRef.current += e.deltaX;
+      const HORIZONTAL_WHEEL_THRESHOLD = 35;
 
-      if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
-      wheelTimeoutRef.current = setTimeout(() => {
-        setPullDistance(0);
-      }, 350);
+      if (wheelAccumulatorXRef.current > HORIZONTAL_WHEEL_THRESHOLD) {
+        // Swiped left (next)
+        handleGoForward();
+        wheelNavCooldownRef.current = true;
+        wheelAccumulatorXRef.current = 0;
+        setTimeout(() => { wheelNavCooldownRef.current = false; }, 400);
+      } else if (wheelAccumulatorXRef.current < -HORIZONTAL_WHEEL_THRESHOLD) {
+        // Swiped right (back)
+        handleGoBack();
+        wheelNavCooldownRef.current = true;
+        wheelAccumulatorXRef.current = 0;
+        setTimeout(() => { wheelNavCooldownRef.current = false; }, 400);
+      }
     }
   };
 
   return (
-    <div className="h-screen h-[100dvh] w-full bg-bg-main text-text-main overflow-hidden flex flex-col font-sans relative selection:bg-bg-border selection:text-text-main select-none">
+    <div 
+      onWheel={handleContainerWheel}
+      className="h-screen h-[100dvh] w-full bg-bg-main text-text-main overflow-hidden flex flex-col font-sans relative selection:bg-bg-border selection:text-text-main select-none hide-scrollbar"
+    >
       
       <AnimatePresence mode="wait">
         
@@ -440,24 +318,15 @@ function GuestApp() {
         {activeState === 'INTRO' && scenario && (
           <motion.div 
             key="intro"
+            ref={introContainerRef}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 1 }}
             onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchCancel}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
-            onWheel={handleWheel}
             className="flex-grow flex flex-col items-center pt-16 px-6 pb-4 text-center relative overflow-y-auto hide-scrollbar w-full"
-            style={{ 
-              transform: pullDistance > 0 && !isHostControlled ? `translateY(-${pullDistance * 0.9}px)` : 'translateY(0)',
-              transition: pullDistance > 0 ? 'none' : 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)'
-            }}
             onScroll={(e) => {
               (e.currentTarget as HTMLDivElement).style.setProperty('--scroll-y', `${e.currentTarget.scrollTop}px`);
             }}
@@ -475,29 +344,11 @@ function GuestApp() {
                   {t.waitFirstCourse}
                 </div>
               ) : (
-                <button 
-                  onClick={beginActs} 
-                  className="group flex flex-col items-center cursor-pointer select-none focus:outline-none"
-                >
-                  <span className={`text-[10px] font-sans tracking-widest uppercase mb-4 transition-colors duration-300 ${
-                    pullProgress >= 1 ? 'text-text-main font-semibold' : 'text-text-sub group-hover:text-text-main'
-                  }`}>
-                    {t.firstCourseReady}
-                  </span>
-                  <div 
-                    className={`w-[1px] transition-colors ${
-                      pullProgress >= 1 
-                        ? 'bg-text-main shadow-[0_0_8px_rgba(255,255,255,0.4)]' 
-                        : 'bg-border-focus group-hover:bg-text-main'
-                    }`} 
-                    style={{
-                      height: '64px',
-                      transform: `scaleY(${1 + (pullDistance * 0.9) / 64})`,
-                      transformOrigin: 'top',
-                      transition: pullDistance > 0 ? 'background-color 0.2s' : 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s'
-                    }}
-                  />
-                </button>
+                <ElasticPullTrigger 
+                  label={t.firstCourseReady}
+                  onTrigger={beginActs}
+                  containerRef={introContainerRef}
+                />
               )}
             </div>
           </motion.div>
@@ -512,19 +363,9 @@ function GuestApp() {
             exit={{ opacity: 0 }}
             transition={{ duration: 1 }}
             onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchCancel}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
-            onWheel={handleWheel}
             className="flex-grow flex flex-col relative overflow-y-auto hide-scrollbar w-full"
-            style={{ 
-              transform: pullDistance > 0 && !isHostControlled ? `translateY(-${pullDistance * 0.9}px)` : 'translateY(0)',
-              transition: pullDistance > 0 ? 'none' : 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1)'
-            }}
             onScroll={(e) => {
               (e.currentTarget as HTMLDivElement).style.setProperty('--scroll-y', `${e.currentTarget.scrollTop}px`);
             }}
@@ -575,8 +416,7 @@ function GuestApp() {
                       isHostControlled={isHostControlled}
                       isNextActReady={true}
                       handleNextAct={handleNextAct}
-                      pullDistance={pullDistance}
-                      pullProgress={pullProgress}
+                      containerRef={actsContainerRef}
                     />
                   )}
                 </div>
@@ -593,7 +433,6 @@ function GuestApp() {
             exit={{ opacity: 0 }}
             transition={{ duration: 2 }}
             onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchCancel}
             className="flex-grow flex flex-col items-center justify-center p-6 text-center relative overflow-hidden"

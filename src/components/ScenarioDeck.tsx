@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { uiTranslations, scenariosData, Language } from '../data/content';
 
@@ -16,6 +16,9 @@ export function ScenarioDeck({
   const [downSwipeCount, setDownSwipeCount] = useState(0);
   const [exitDirection, setExitDirection] = useState<'left' | 'right' | 'down' | 'up' | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const wheelAccumulatorRef = useRef(0);
+  const wheelCooldownRef = useRef(false);
 
   const handleDragEnd = (event: any, info: any, scenarioId: string) => {
     setTimeout(() => setIsDragging(false), 50);
@@ -58,6 +61,30 @@ export function ScenarioDeck({
     onSelect(scenarioId);
   };
 
+  const handleWheel = (e: React.WheelEvent) => {
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 6) {
+      e.stopPropagation();
+      if (wheelCooldownRef.current) return;
+
+      wheelAccumulatorRef.current += e.deltaX;
+      if (wheelAccumulatorRef.current > 35) {
+        setExitDirection('left');
+        setDownSwipeCount(0);
+        setCurrentIndex(prev => prev + 1);
+        wheelCooldownRef.current = true;
+        wheelAccumulatorRef.current = 0;
+        setTimeout(() => { wheelCooldownRef.current = false; }, 380);
+      } else if (wheelAccumulatorRef.current < -35) {
+        setExitDirection('right');
+        setDownSwipeCount(0);
+        setCurrentIndex(prev => (prev > 0 ? prev - 1 : scenarios.length - 1));
+        wheelCooldownRef.current = true;
+        wheelAccumulatorRef.current = 0;
+        setTimeout(() => { wheelCooldownRef.current = false; }, 380);
+      }
+    }
+  };
+
   // Stack 3 cards
   const stackItems = [0, 1, 2].map(offset => {
     const absoluteIndex = currentIndex + offset;
@@ -66,7 +93,10 @@ export function ScenarioDeck({
   });
 
   return (
-    <div className="relative w-full flex-1 min-h-[300px] max-h-[500px] my-auto flex items-center justify-center perspective-[1000px]">
+    <div 
+      onWheel={handleWheel}
+      className="relative w-full flex-1 min-h-[300px] max-h-[500px] my-auto flex items-center justify-center perspective-[1000px] overflow-hidden hide-scrollbar"
+    >
       <AnimatePresence custom={exitDirection}>
         {stackItems.map((item, i) => {
           const isTop = i === 0;
