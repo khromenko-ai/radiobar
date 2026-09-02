@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { uiTranslations, scenariosData, Language } from '../data/content';
+import { uiTranslations, scenariosData, Language, getScenarioImage } from '../data/content';
 
 export function ScenarioDeck({ 
   language, 
@@ -11,8 +11,9 @@ export function ScenarioDeck({
   onSelect: (id: string) => void,
   activeSessionScenarioId?: string | null
 }) {
-  const scenarios = scenariosData[language];
-  const t = uiTranslations[language];
+  const validLang: Language = (language === 'EN' || language === 'ES' || language === 'RU') ? language : 'RU';
+  const scenarios = scenariosData[validLang] || scenariosData.RU;
+  const t = uiTranslations[validLang] || uiTranslations.RU;
   
   const [currentIndex, setCurrentIndex] = useState(0);
   const [downSwipeCount, setDownSwipeCount] = useState(0);
@@ -131,40 +132,63 @@ export function ScenarioDeck({
                 y: i * 16,
                 zIndex: 10 - i
               }}
-              exit={(direction) => ({ 
+              exit={{ 
                 opacity: 0, 
                 scale: isTop ? 1 : 0.8, 
-                x: isTop && direction === 'left' ? -400 : isTop && direction === 'right' ? 400 : 0,
-                y: isTop && direction === 'up' ? -400 : isTop && direction === 'down' ? 400 : 100, 
+                x: isTop && exitDirection === 'left' ? -400 : isTop && exitDirection === 'right' ? 400 : 0,
+                y: isTop && exitDirection === 'up' ? -400 : isTop && exitDirection === 'down' ? 400 : 100, 
                 transition: { duration: 0.3 }
-              })}
+              }}
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute w-full h-[88%] max-h-[440px] max-w-[330px] bg-bg-card border border-border-main p-6 sm:p-8 flex flex-col items-center justify-center text-center rounded-2xl shadow-2xl origin-bottom"
+              className="absolute w-full h-[88%] max-h-[440px] max-w-[330px] bg-bg-card border border-border-main flex flex-col items-center justify-center text-center rounded-2xl shadow-2xl origin-bottom overflow-hidden select-none"
               style={{
                 cursor: isTop ? 'grab' : 'auto'
               }}
               whileTap={{ cursor: isTop ? 'grabbing' : 'auto' }}
             >
-              <h2 className="text-2xl sm:text-3xl font-serif text-text-main mb-3 sm:mb-4 tracking-wide leading-tight">
-                {item.title}
-              </h2>
-              <p className="text-xs sm:text-sm font-sans text-text-muted mb-6 sm:mb-10 tracking-wider uppercase">
-                {item.subtitle}
-              </p>
-              {activeSessionScenarioId && item.id === activeSessionScenarioId ? (
-                <div className="flex items-center justify-center mb-6 sm:mb-10 w-28 mx-auto select-none pointer-events-none">
-                  <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
-                  <div className="mx-2 flex items-center justify-center">
-                    <div className="w-2 h-2 rotate-45 border border-text-main bg-bg-card shadow-sm" />
-                  </div>
-                  <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
+              {/* Top Half Photorealistic Hero Image with Bottom Fade (just like Act pages) */}
+              <div className="relative w-full h-[50%] overflow-hidden shrink-0 pointer-events-none">
+                <img 
+                  src={getScenarioImage(item.id)} 
+                  alt={item.title}
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full object-cover object-center scale-100"
+                  loading="eager"
+                />
+                {/* Subtle top shade for pristine contrast in light/dark */}
+                <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-bg-card/70 via-bg-card/20 to-transparent" />
+                
+                {/* Smooth Fade Gradient from photo into card body */}
+                <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-bg-card via-bg-card/85 to-transparent flex flex-col justify-end items-center px-4 pb-2">
+                  <h2 className="text-2xl sm:text-[26px] font-serif text-text-main tracking-wide leading-tight text-center drop-shadow-sm">
+                    {item.title}
+                  </h2>
                 </div>
-              ) : (
-                <div className="w-8 h-[1px] bg-bg-border mb-6 sm:mb-10" />
-              )}
-              <p className="text-xs sm:text-sm font-sans text-text-sec leading-relaxed max-w-[240px]">
-                {item.description}
-              </p>
+              </div>
+
+              {/* Bottom Half Content Area */}
+              <div className="w-full flex-1 px-6 pb-6 pt-1 flex flex-col items-center justify-between text-center bg-bg-card">
+                <p className="text-xs font-sans text-text-muted tracking-wider uppercase font-medium mt-1">
+                  {item.subtitle}
+                </p>
+
+                {/* Divider Line with Active Marker */}
+                {activeSessionScenarioId && item.id === activeSessionScenarioId ? (
+                  <div className="flex items-center justify-center my-3 w-28 mx-auto select-none pointer-events-none">
+                    <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
+                    <div className="mx-2 flex items-center justify-center">
+                      <div className="w-2 h-2 rotate-45 border border-text-main bg-bg-card shadow-sm" />
+                    </div>
+                    <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
+                  </div>
+                ) : (
+                  <div className="w-12 h-[1px] bg-border-main my-3" />
+                )}
+
+                <p className="text-xs sm:text-sm font-sans text-text-sec leading-relaxed max-w-[240px] mb-1">
+                  {item.description}
+                </p>
+              </div>
             </motion.div>
           );
         })}

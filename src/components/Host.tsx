@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { getHostAuth, setHostAuth, useSessions, DinnerSession } from '../lib/store';
 import { scenariosData, Language, uiTranslations, getActImage } from '../data/content';
 import { useSession } from '../hooks/useSession';
+import { hostP2PNode, buildGuestUrl } from '../lib/p2p';
 import { LanguageToggle } from './LanguageToggle';
 import { ThemeToggle } from './ThemeToggle';
 import { FullscreenToggle } from './FullscreenToggle';
 import { CardsIcon } from './CardsIcon';
 import { useActTimer } from './Timer';
 import { QRCodeSVG } from 'qrcode.react';
-import { QrCode, X, Copy, Check, Trash2 } from 'lucide-react';
+import { QrCode, X, Copy, Check, Trash2, Radio } from 'lucide-react';
 
 export function HostApp() {
   const { session, updateSession, toggleDevMode } = useSession();
@@ -235,7 +236,7 @@ function HostDashboard({
 
   const handleCreate = () => {
     if (!newTable.trim()) return;
-    const id = createSession(newTable.trim(), newScenario);
+    const id = createSession(newTable.trim(), newScenario, sessionState.devMode);
     setNewTable('');
     onSelectSession(id);
   };
@@ -398,7 +399,7 @@ function HostSessionControl({
   const scenario = scenariosData[language].find(s => s.id === session.scenarioId);
   if (!scenario) return null;
 
-  const durationMs = sessionState.devMode ? 10000 : 10 * 60 * 1000;
+  const durationMs = (session.devMode ?? sessionState.devMode) ? 10000 : 10 * 60 * 1000;
   const { timeFormatted, isExpired } = useActTimer({
     actStartedAt: session.actStartedAt,
     durationMs,
@@ -408,6 +409,12 @@ function HostSessionControl({
 
   const currentAct = scenario.acts[session.currentActIndex];
   const nextAct = scenario.acts[session.currentActIndex + 1];
+
+  // Initialize host P2P node for this session so guests can connect directly to this device
+  useEffect(() => {
+    hostP2PNode.init(session.id, session);
+    hostP2PNode.updateState(session);
+  }, [session.id, session]);
 
   const handleStart = () => {
     updateSession(session.id, { 
@@ -449,9 +456,8 @@ function HostSessionControl({
     });
   };
 
-  // Construct guest URL with moment precision
-  const baseUrl = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://radio.khromenko.com';
-  const guestUrl = `${baseUrl}/?session=${session.id}&scenario=${session.scenarioId}&act=${session.currentActIndex}&table=${encodeURIComponent(session.tableName)}`;
+  // Construct guest URL with moment precision and timing snapshot
+  const guestUrl = buildGuestUrl(session, sessionState.devMode);
 
   return (
     <div className="max-w-md mx-auto p-6 min-h-full flex flex-col justify-between pb-24">
@@ -682,9 +688,8 @@ function QrFullscreenModal({
   const currentAct = scenario?.acts[session.currentActIndex];
   const [copied, setCopied] = useState(false);
 
-  // Exact URL pointing to the specific moment
-  const baseUrl = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://radio.khromenko.com';
-  const guestUrl = `${baseUrl}/?session=${session.id}&scenario=${session.scenarioId}&act=${session.currentActIndex}&table=${encodeURIComponent(session.tableName)}`;
+  // Exact URL with moment precision and timing snapshot
+  const guestUrl = buildGuestUrl(session, session.devMode);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(guestUrl);

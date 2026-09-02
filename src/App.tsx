@@ -11,7 +11,17 @@ import { GuestInfoCard } from './components/GuestInfoCard';
 import { FullscreenToggle } from './components/FullscreenToggle';
 import { HostApp } from './components/Host';
 import { motion, AnimatePresence } from 'motion/react';
-import { useSessions, getSessions, saveSessions } from './lib/store';
+import { useSessions, getSessions, saveSessions, fetchSessionById, DinnerSession } from './lib/store';
+import { guestP2PNode } from './lib/p2p';
+
+function ScrollToTopOnMount({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+    }
+  }, [containerRef]);
+  return null;
+}
 
 function TopActions({ 
   session, 
@@ -58,7 +68,6 @@ function TopActions({
 function GuestApp() {
   const { session, updateSession, resetSession, startScenario, beginActs, advanceAct, goToAct, endExperience, toggleDevMode } = useSession();
   const { sessions, updateSession: updateHostStoreSession, advanceSession: advanceHostStoreSession } = useSessions();
-  const t = uiTranslations[session.language];
   const hostSession = session.hostSessionId ? sessions[session.hostSessionId] : null;
   const isHostControlled = !!session.hostSessionId;
 
@@ -73,45 +82,88 @@ function GuestApp() {
     const actParam = params.get('act');
     const tableParam = params.get('table');
     const langParam = params.get('lang');
+    const statusParam = params.get('status') as DinnerSession['status'] | null;
+    const startedAtParam = params.get('startedAt');
+    const pausedAtParam = params.get('pausedAt');
+    const devParam = params.get('dev');
 
     if (sid || scenarioParam) {
       const actIdx = actParam !== null ? parseInt(actParam, 10) : 0;
       const targetScenario = scenarioParam || 'first-date';
       const targetLang = (langParam === 'ES' || langParam === 'EN' || langParam === 'RU') ? langParam : session.language;
       const validActIdx = isNaN(actIdx) ? 0 : actIdx;
+      const isDevMode = devParam === '1' || (session.devMode ?? false);
+      const parsedStatus: DinnerSession['status'] = statusParam || 'ACTIVE';
+      const parsedStartedAt = startedAtParam ? parseInt(startedAtParam, 10) : (parsedStatus === 'WAITING' ? null : Date.now());
+      const parsedPausedAt = pausedAtParam ? parseInt(pausedAtParam, 10) : null;
 
       if (sid) {
+        // Immediate local initialization using QR snapshot
         const storedSessions = getSessions();
-        if (!storedSessions[sid]) {
-          storedSessions[sid] = {
-            id: sid,
-            tableName: tableParam ? decodeURIComponent(tableParam) : `Table ${sid}`,
-            scenarioId: targetScenario,
-            currentActIndex: validActIdx,
-            status: 'ACTIVE',
-            actStartedAt: Date.now(),
-            pausedAt: null
-          };
-          saveSessions(storedSessions);
-        } else {
-          storedSessions[sid].currentActIndex = validActIdx;
-          if (scenarioParam) storedSessions[sid].scenarioId = targetScenario;
-          if (tableParam) storedSessions[sid].tableName = decodeURIComponent(tableParam);
-          saveSessions(storedSessions);
-        }
+        const initialSnap: DinnerSession = {
+          id: sid,
+          tableName: tableParam ? decodeURIComponent(tableParam) : (storedSessions[sid]?.tableName || `Table ${sid}`),
+          scenarioId: targetScenario,
+          currentActIndex: validActIdx,
+          status: parsedStatus,
+          actStartedAt: parsedStartedAt,
+          pausedAt: parsedPausedAt,
+          devMode: isDevMode,
+          updatedAt: Date.now()
+        };
+        storedSessions[sid] = { ...(storedSessions[sid] || {}), ...initialSnap };
+        saveSessions(storedSessions);
+
+        lastHostActIndexRef.current = validActIdx;
+        lastHostStatusRef.current = parsedStatus;
+
+        updateSession({
+          hostSessionId: sid,
+          scenarioId: targetScenario,
+          currentActIndex: validActIdx,
+          maxActIndexReached: validActIdx,
+          state: parsedStatus === 'WAITING' ? 'INTRO' : (parsedStatus === 'COMPLETED' ? 'END' : 'ACTS'),
+          actStartedAt: parsedStartedAt,
+          language: targetLang,
+          devMode: isDevMode,
+        });
+
+        // Initialize direct Peer-to-Peer connection to host's device
+        guestP2PNode.init(sid, (hostLiveSession) => {
+          if (hostLiveSession && hostLiveSession.id === sid) {
+            const current = getSessions();
+            current[sid] = hostLiveSession;
+            saveSessions(current);
+          }
+        });
+
+        // Background server fetch as fallback
+        fetchSessionById(sid).then((serverSession) => {
+          if (serverSession) {
+            lastHostActIndexRef.current = serverSession.currentActIndex;
+            lastHostStatusRef.current = serverSession.status;
+            updateSession({
+              hostSessionId: sid,
+              scenarioId: serverSession.scenarioId || targetScenario,
+              currentActIndex: serverSession.currentActIndex,
+              maxActIndexReached: serverSession.currentActIndex,
+              state: serverSession.status === 'WAITING' ? 'INTRO' : (serverSession.status === 'COMPLETED' ? 'END' : 'ACTS'),
+              actStartedAt: serverSession.actStartedAt,
+              language: targetLang,
+              devMode: serverSession.devMode ?? isDevMode,
+            });
+          }
+        });
+      } else {
+        updateSession({
+          scenarioId: targetScenario,
+          currentActIndex: validActIdx,
+          maxActIndexReached: validActIdx,
+          state: 'ACTS',
+          actStartedAt: Date.now(),
+          language: targetLang,
+        });
       }
-
-      lastHostActIndexRef.current = validActIdx;
-
-      updateSession({
-        hostSessionId: sid || null,
-        scenarioId: targetScenario,
-        currentActIndex: validActIdx,
-        maxActIndexReached: Math.max(session.maxActIndexReached || 0, validActIdx),
-        state: 'ACTS',
-        actStartedAt: Date.now(),
-        language: targetLang,
-      });
 
       setIsNextActReady(false);
 
@@ -119,6 +171,22 @@ function GuestApp() {
       window.history.replaceState({}, '', '/');
     }
   }, []);
+
+  // Connect guest P2P node whenever hostSessionId changes
+  useEffect(() => {
+    if (session.hostSessionId) {
+      guestP2PNode.init(session.hostSessionId, (hostLiveSession) => {
+        if (hostLiveSession && hostLiveSession.id === session.hostSessionId) {
+          const current = getSessions();
+          current[session.hostSessionId] = hostLiveSession;
+          saveSessions(current);
+        }
+      });
+    }
+    return () => {
+      // Keep connection active during session
+    };
+  }, [session.hostSessionId]);
 
   // Instant synchronization with hostSession changes
   useEffect(() => {
@@ -134,8 +202,8 @@ function GuestApp() {
       lastHostActIndexRef.current = hostSession.currentActIndex;
       updateSession({
         currentActIndex: hostSession.currentActIndex,
-        maxActIndexReached: Math.max(session.maxActIndexReached || 0, hostSession.currentActIndex),
-        state: 'ACTS',
+        maxActIndexReached: hostSession.currentActIndex, // Clamp strictly to host's current act
+        state: hostSession.status === 'WAITING' ? 'INTRO' : (hostSession.status === 'COMPLETED' ? 'END' : 'ACTS'),
       });
       setIsNextActReady(false);
     }
@@ -151,16 +219,48 @@ function GuestApp() {
         updateSession({ state: 'END' });
       }
     }
-  }, [hostSession, session.scenarioId, session.currentActIndex, session.state, session.maxActIndexReached]);
+  }, [hostSession, session.scenarioId, session.currentActIndex, session.state]);
+
+  const validLanguage: Language = (session.language === 'EN' || session.language === 'ES' || session.language === 'RU') 
+    ? session.language 
+    : 'RU';
+  const t = uiTranslations[validLanguage] || uiTranslations.RU;
+  const currentScenarios = scenariosData[validLanguage] || scenariosData.RU;
 
   const activeScenarioId = hostSession?.scenarioId || session.scenarioId;
   const activeActIndex = session.currentActIndex;
-  const activeActStartedAt = hostSession?.actStartedAt || session.actStartedAt || Date.now();
-  const isPaused = hostSession?.status === 'PAUSED';
-  const pausedAt = hostSession?.pausedAt || null;
+  // Always use hostSession's actStartedAt when connected to a host
+  const activeActStartedAt = isHostControlled ? hostSession?.actStartedAt : (session.actStartedAt || Date.now());
+  const isPaused = isHostControlled ? (hostSession?.status === 'PAUSED') : false;
+  const pausedAt = isHostControlled ? (hostSession?.pausedAt || null) : null;
 
-  const scenario = activeScenarioId ? scenariosData[session.language].find(s => s.id === activeScenarioId) : null;
+  const scenario = activeScenarioId ? currentScenarios.find(s => s.id === activeScenarioId) : null;
   const [isNextActReady, setIsNextActReady] = useState(false);
+
+  // Derive safe rendering state immediately
+  let effectiveState = session.state;
+  if ((effectiveState === 'INTRO' || effectiveState === 'ACTS') && !scenario) {
+    effectiveState = 'HOME';
+  }
+  if (!['HOME', 'INFO', 'INTRO', 'ACTS', 'END'].includes(effectiveState)) {
+    effectiveState = 'HOME';
+  }
+
+  // Safety fallback: if in INTRO or ACTS without a valid scenario, restore HOME in session state
+  useEffect(() => {
+    if ((session.state === 'INTRO' || session.state === 'ACTS') && !scenario) {
+      updateSession({ state: 'HOME', scenarioId: null });
+    }
+  }, [session.state, scenario]);
+
+  // Safety fallback: if currentActIndex is out of range, clamp it safely
+  useEffect(() => {
+    if (session.state === 'ACTS' && scenario && scenario.acts) {
+      if (session.currentActIndex >= scenario.acts.length || session.currentActIndex < 0) {
+        updateSession({ currentActIndex: 0 });
+      }
+    }
+  }, [session.state, scenario, session.currentActIndex]);
 
   const handleThemeTripleClick = () => {
     // Triple click on theme button allows navigating to main menu (deck) even during a session
@@ -172,29 +272,27 @@ function GuestApp() {
   const introContainerRef = useRef<HTMLDivElement | null>(null);
   const actsContainerRef = useRef<HTMLDivElement | null>(null);
 
-  const DURATION_MS = session.devMode ? 10000 : 10 * 60 * 1000;
+  const effectiveDevMode = hostSession?.devMode ?? session.devMode;
+  const DURATION_MS = effectiveDevMode ? 10000 : 10 * 60 * 1000;
 
-  // Maximum act unlocked by host or user progression
-  const maxUnlockedActIndex = Math.max(
-    session.maxActIndexReached || 0,
-    hostSession?.currentActIndex || 0
-  );
+  // Maximum act unlocked:
+  // In a host-controlled session, guest can NEVER go past hostSession.currentActIndex unless timer expires
+  const maxUnlockedActIndex = isHostControlled && hostSession
+    ? hostSession.currentActIndex
+    : (session.maxActIndexReached || 0);
 
-  // If looking at a past completed act, next moment is immediately available to browse
-  const isPastAct = isHostControlled && hostSession && activeActIndex < hostSession.currentActIndex;
+  // If looking at a past completed act, next moment is immediately available to return to
+  const isPastAct = activeActIndex < maxUnlockedActIndex;
 
   // Reset ready state when changing acts
   useEffect(() => {
     setIsNextActReady(false);
   }, [activeActIndex, activeScenarioId]);
 
-  // Ensure scroll is at the top whenever act index or state changes
+  // Ensure scroll is at the top whenever state changes
   useEffect(() => {
-    if (actsContainerRef.current) {
-      actsContainerRef.current.scrollTop = 0;
-    }
     window.scrollTo(0, 0);
-  }, [activeActIndex, session.state]);
+  }, [session.state]);
 
   const handleStartCourse = () => {
     if (isHostControlled && session.hostSessionId) {
@@ -209,22 +307,25 @@ function GuestApp() {
   };
 
   const handleNextAct = () => {
-    if (actsContainerRef.current) {
-      actsContainerRef.current.scrollTop = 0;
-    }
-
-    // If guest was looking at a past act, advancing moves them toward current unlocked act
-    if (activeActIndex < maxUnlockedActIndex) {
+    // If guest was looking at an earlier past act, advancing moves them toward current active act
+    if (isPastAct && activeActIndex < maxUnlockedActIndex) {
       goToAct(activeActIndex + 1);
       setIsNextActReady(false);
+      return;
+    }
+
+    // Guest is on the current act: only allow advancing if timer is complete (isNextActReady)
+    if (!isNextActReady) {
       return;
     }
 
     if (isHostControlled && session.hostSessionId) {
       if (scenario && activeActIndex < scenario.acts.length - 1) {
         advanceHostStoreSession(session.hostSessionId);
+        guestP2PNode.sendGuestAction({ type: 'ADVANCE_ACT', sessionId: session.hostSessionId });
       } else {
         updateHostStoreSession(session.hostSessionId, { status: 'COMPLETED' });
+        guestP2PNode.sendGuestAction({ type: 'END_SESSION', sessionId: session.hostSessionId });
       }
       setIsNextActReady(false);
       return;
@@ -239,10 +340,6 @@ function GuestApp() {
   };
 
   const handleGoBack = () => {
-    if (actsContainerRef.current) {
-      actsContainerRef.current.scrollTop = 0;
-    }
-
     if (session.state === 'ACTS') {
       if (activeActIndex > 0) {
         // Guest can freely browse back through earlier acts
@@ -267,24 +364,28 @@ function GuestApp() {
   };
 
   const handleGoForward = () => {
-    if (actsContainerRef.current) {
-      actsContainerRef.current.scrollTop = 0;
-    }
-
     if (session.state === 'INTRO') {
       handleStartCourse();
-    } else if (session.state === 'ACTS') {
-      // If the guest is browsing a past act, they can move forward freely up to maxUnlockedActIndex
+      return;
+    }
+
+    if (session.state !== 'ACTS' || !scenario) return;
+
+    // If browsing past act, guest can move forward up to the current unlocked act
+    if (isPastAct) {
       if (activeActIndex < maxUnlockedActIndex) {
         goToAct(activeActIndex + 1);
         setIsNextActReady(false);
-      } else if (session.devMode || isNextActReady || isPastAct) {
-        // Bleeding edge act ready
-        if (scenario && activeActIndex < scenario.acts.length - 1) {
-          handleNextAct();
-        } else if (scenario && activeActIndex === scenario.acts.length - 1) {
-          endExperience();
-        }
+      }
+      return;
+    }
+
+    // On the current act: guest CANNOT move forward until timer is completed
+    if (isNextActReady) {
+      if (activeActIndex < scenario.acts.length - 1) {
+        handleNextAct();
+      } else if (activeActIndex === scenario.acts.length - 1) {
+        endExperience();
       }
     }
   };
@@ -356,9 +457,9 @@ function GuestApp() {
       className="h-screen h-[100dvh] w-full bg-bg-main text-text-main overflow-hidden flex flex-col font-sans relative selection:bg-bg-border selection:text-text-main select-none hide-scrollbar"
     >
       
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         
-        {session.state === 'HOME' && (
+        {effectiveState === 'HOME' && (
           <motion.div 
             key="home"
             initial={{ opacity: 0 }}
@@ -376,7 +477,7 @@ function GuestApp() {
               tableName={hostSession?.tableName}
             />
             <ScenarioDeck 
-              language={session.language} 
+              language={validLanguage} 
               activeSessionScenarioId={activeScenarioId}
               onSelect={(id) => {
                 if (id === 'INFO_CARD') {
@@ -413,7 +514,7 @@ function GuestApp() {
           </motion.div>
         )}
 
-        {session.state === 'INFO' && (
+        {effectiveState === 'INFO' && (
           <motion.div 
             key="info"
             initial={{ opacity: 0 }}
@@ -431,13 +532,13 @@ function GuestApp() {
               tableName={hostSession?.tableName}
             />
             <GuestInfoCard 
-              language={session.language} 
+              language={validLanguage} 
               onBack={() => updateSession({ state: isHostControlled ? 'INTRO' : 'HOME' })} 
             />
           </motion.div>
         )}
 
-        {session.state === 'INTRO' && scenario && (
+        {effectiveState === 'INTRO' && scenario && (
           <motion.div 
             key="intro"
             ref={introContainerRef}
@@ -477,7 +578,7 @@ function GuestApp() {
           </motion.div>
         )}
 
-        {session.state === 'ACTS' && scenario && (
+        {effectiveState === 'ACTS' && scenario && (
           <motion.div 
             key="acts"
             ref={actsContainerRef}
@@ -506,7 +607,7 @@ function GuestApp() {
                 </span>
               }
             />
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={activeActIndex}
                 initial={{ opacity: 0, filter: 'blur(10px)' }}
@@ -515,7 +616,8 @@ function GuestApp() {
                 transition={{ duration: 1.5, ease: "easeInOut" }}
                 className="w-full flex-grow flex flex-col min-h-max"
               >
-                <ActCard act={scenario.acts[activeActIndex]} language={session.language} />
+                <ScrollToTopOnMount containerRef={actsContainerRef} />
+                <ActCard act={scenario.acts[activeActIndex]} language={validLanguage} />
                 
                 <div className="w-full pt-8 pb-4 flex justify-center shrink-0">
                   <Timer 
@@ -523,7 +625,7 @@ function GuestApp() {
                     durationMs={DURATION_MS} 
                     isPaused={isPastAct ? false : isPaused}
                     pausedAt={isPastAct ? null : pausedAt}
-                    language={session.language}
+                    language={validLanguage}
                     onComplete={() => setIsNextActReady(true)}
                     isNextActReady={isNextActReady || isPastAct}
                     handleNextAct={handleNextAct}
@@ -535,7 +637,7 @@ function GuestApp() {
           </motion.div>
         )}
 
-        {session.state === 'END' && (
+        {effectiveState === 'END' && (
           <motion.div 
             key="end"
             initial={{ opacity: 0 }}

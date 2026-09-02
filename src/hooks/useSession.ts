@@ -15,7 +15,7 @@ export interface SessionData {
 }
 
 const DEFAULT_SESSION: SessionData = {
-  language: 'EN',
+  language: 'RU',
   scenarioId: null,
   currentActIndex: 0,
   maxActIndexReached: 0,
@@ -30,7 +30,23 @@ export function useSession() {
     const saved = localStorage.getItem('immersive_dinner_session');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        const validLangs: Language[] = ['EN', 'ES', 'RU'];
+        const lang: Language = validLangs.includes(parsed.language) ? parsed.language : 'RU';
+        const validStates: AppState[] = ['HOME', 'INFO', 'INTRO', 'ACTS', 'END'];
+        let state: AppState = validStates.includes(parsed.state) ? parsed.state : 'HOME';
+
+        if ((state === 'INTRO' || state === 'ACTS') && !parsed.scenarioId) {
+          state = 'HOME';
+        }
+
+        return {
+          ...DEFAULT_SESSION,
+          ...parsed,
+          language: lang,
+          state,
+          scenarioId: parsed.scenarioId || null,
+        };
       } catch (e) {
         console.error('Failed to parse session', e);
       }

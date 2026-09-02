@@ -4,7 +4,8 @@ import { uiTranslations, Language } from '../data/content';
 import { CardsIcon } from './CardsIcon';
 
 export function GuestInfoCard({ language, onBack }: { language: Language, onBack: () => void }) {
-  const t = uiTranslations[language];
+  const validLang: Language = (language === 'EN' || language === 'ES' || language === 'RU') ? language : 'RU';
+  const t = uiTranslations[validLang] || uiTranslations.RU;
   const [taps, setTaps] = useState<number[]>([]);
   const [showAuth, setShowAuth] = useState(false);
   const [pin, setPin] = useState('');

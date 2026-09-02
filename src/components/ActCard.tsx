@@ -1,8 +1,15 @@
 import { motion } from 'motion/react';
 import { Act, Language, uiTranslations, getActImage } from '../data/content';
 
-export function ActCard({ act, language }: { act: Act; language: Language }) {
-  const t = uiTranslations[language];
+export function ActCard({ act, language }: { act?: Act; language: Language }) {
+  const t = uiTranslations[language] || uiTranslations.RU;
+  if (!act) {
+    return (
+      <div className="w-full pt-16 px-6 pb-2 text-center text-text-muted">
+        <p>Loading...</p>
+      </div>
+    );
+  }
   const imageUrl = getActImage(act);
 
   return (
@@ -17,7 +24,7 @@ export function ActCard({ act, language }: { act: Act; language: Language }) {
         <div className="relative w-full h-[320px] sm:h-[380px] overflow-hidden shrink-0">
           <img 
             src={imageUrl} 
-            alt={act.dishName.replace(/\n/g, ' ')}
+            alt={(act.dishName || '').replace(/\n/g, ' ')}
             referrerPolicy="no-referrer"
             className="absolute inset-0 w-full h-full object-cover object-center"
             style={{ 
@@ -48,7 +55,7 @@ export function ActCard({ act, language }: { act: Act; language: Language }) {
       <div className="flex flex-col w-full max-w-[420px] mx-auto px-6 pt-0 pb-4 text-center">
         {/* Instruction */}
         <div className="flex flex-col justify-center min-h-[100px] mt-1 mb-4 space-y-1.5">
-          {act.instruction.split('\n\n').map((paragraph, idx) => (
+          {(act.instruction || '').split('\n\n').map((paragraph, idx) => (
             <p key={idx} className="text-base sm:text-lg font-serif text-text-sec leading-[1.4] text-center whitespace-pre-wrap">
               {paragraph}
             </p>

@@ -79,7 +79,8 @@ export function Timer({
     pausedAt,
     onComplete
   });
-  const t = uiTranslations[language];
+  const validLang: Language = (language === 'EN' || language === 'ES' || language === 'RU') ? language : 'RU';
+  const t = uiTranslations[validLang] || uiTranslations.RU;
 
   if (isNextActReady || isExpired) {
     return (

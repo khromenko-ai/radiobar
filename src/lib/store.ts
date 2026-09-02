@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { hostP2PNode } from './p2p';
 
 export interface DinnerSession {
   id: string;
@@ -10,6 +11,7 @@ export interface DinnerSession {
   pausedAt: number | null;
   completedAt?: number | null;
   updatedAt?: number;
+  devMode?: boolean;
 }
 
 const STORAGE_KEY = 'immersive_sessions';
@@ -60,6 +62,26 @@ export const getSessions = (): Record<string, DinnerSession> => {
   }
 };
 
+export const fetchSessionById = async (id: string): Promise<DinnerSession | null> => {
+  try {
+    const res = await fetch(`/api/sessions/${id}`);
+    if (res.ok) {
+      const session: DinnerSession = await res.json();
+      if (session && session.id) {
+        const local = getSessions();
+        local[id] = session;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
+        window.dispatchEvent(new Event('sessions-updated'));
+        return session;
+      }
+    }
+  } catch {
+    // Offline or starting
+  }
+  const local = getSessions();
+  return local[id] || null;
+};
+
 // Push to server in background
 const pushSessionsToServer = async (sessions: Record<string, DinnerSession>) => {
   try {
@@ -84,6 +106,13 @@ export const saveSessions = (sessions: Record<string, DinnerSession>) => {
       broadcastChannel.postMessage({ type: 'SESSIONS_UPDATE', sessions: pruned });
     } catch {
       // Ignore
+    }
+  }
+
+  // Broadcast to P2P connected guests
+  for (const s of Object.values(pruned)) {
+    if (s && s.id) {
+      hostP2PNode.updateState(s);
     }
   }
 
@@ -133,7 +162,19 @@ export function useSessions() {
           if (remoteSessions) {
             const prunedRemote = pruneExpiredSessions(remoteSessions);
             const local = getSessions();
-            const merged = { ...local, ...prunedRemote };
+            // Merge remote with local prioritizing higher updatedAt
+            const merged: Record<string, DinnerSession> = { ...local };
+            for (const [id, r] of Object.entries(prunedRemote)) {
+              if (!merged[id]) {
+                merged[id] = r;
+              } else {
+                const localUpdated = merged[id].updatedAt || merged[id].actStartedAt || 0;
+                const remoteUpdated = r.updatedAt || r.actStartedAt || 0;
+                if (remoteUpdated >= localUpdated) {
+                  merged[id] = r;
+                }
+              }
+            }
             const prunedMerged = pruneExpiredSessions(merged);
             if (JSON.stringify(prunedMerged) !== JSON.stringify(local)) {
               localStorage.setItem(STORAGE_KEY, JSON.stringify(prunedMerged));
@@ -148,7 +189,7 @@ export function useSessions() {
     };
 
     fetchServerSessions();
-    const pollInterval = setInterval(fetchServerSessions, 1000);
+    const pollInterval = setInterval(fetchServerSessions, 800);
 
     return () => {
       isMounted = false;
@@ -175,7 +216,7 @@ export function useSessions() {
     }
   }, []);
 
-  const createSession = useCallback((tableName: string, scenarioId: string) => {
+  const createSession = useCallback((tableName: string, scenarioId: string, devMode?: boolean) => {
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
     const current = getSessions();
     current[id] = {
@@ -187,7 +228,8 @@ export function useSessions() {
       actStartedAt: null,
       pausedAt: null,
       completedAt: null,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      devMode: !!devMode
     };
     saveSessions(current);
     return id;

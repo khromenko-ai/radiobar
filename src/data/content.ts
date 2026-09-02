@@ -1,3 +1,7 @@
+import firstDateImg from '../assets/images/scenario_first_date_v2_1788337619011.jpg';
+import bestFriendsImg from '../assets/images/scenario_best_friends_1788336719201.jpg';
+import coupleReboostImg from '../assets/images/scenario_reboost_v2_1788337632167.jpg';
+
 export type Language = 'EN' | 'ES' | 'RU';
 
 export interface Act {
@@ -12,11 +16,12 @@ export interface Act {
 }
 
 export function getActImage(act: Act): string {
+  if (!act) return '/food/first-date-1.jpg';
   if (act.image) return act.image;
   const num = parseInt(act.number, 10) || 1;
-  if (act.id.startsWith('fd')) return `/food/first-date-${num}.jpg`;
-  if (act.id.startsWith('bf')) return `/food/best-friends-${num}.jpg`;
-  if (act.id.startsWith('rr')) return `/food/relation-reboost-${num}.jpg`;
+  if (act.id && act.id.startsWith('fd')) return `/food/first-date-${num}.jpg`;
+  if (act.id && act.id.startsWith('bf')) return `/food/best-friends-${num}.jpg`;
+  if (act.id && act.id.startsWith('rr')) return `/food/relation-reboost-${num}.jpg`;
   return `/food/first-date-1.jpg`;
 }
 
@@ -26,7 +31,15 @@ export interface Scenario {
   subtitle: string;
   description: string;
   introText: string;
+  image?: string;
   acts: Act[];
+}
+
+export function getScenarioImage(scenarioId: string): string {
+  if (scenarioId === 'first-date') return firstDateImg;
+  if (scenarioId === 'best-friends') return bestFriendsImg;
+  if (scenarioId === 'relationship-reboost') return coupleReboostImg;
+  return firstDateImg;
 }
 
 export const uiTranslations = {
@@ -298,9 +311,9 @@ export const scenariosData: Record<Language, Scenario[]> = {
     {
       id: 'best-friends',
       title: 'BEST FRIENDS',
-      subtitle: 'An immersive dinner for two.',
-      description: 'A dinner for two about friendship, shared memories, playfulness and being present together.',
-      introText: '7 moments.\nOne evening.\nTwo people.',
+      subtitle: 'An immersive dinner for close friends.',
+      description: 'A dinner for friends about connection, shared memories, playfulness and being present together.',
+      introText: '7 moments.\nOne evening.\nTrue friends.',
       acts: [
         {
           id: 'bf-1',
@@ -516,9 +529,9 @@ export const scenariosData: Record<Language, Scenario[]> = {
     {
       id: 'best-friends',
       title: 'MEJORES AMIGOS',
-      subtitle: 'Una cena inmersiva para dos.',
-      description: 'Una cena para dos sobre la amistad, los recuerdos compartidos, la diversión y estar presentes juntos.',
-      introText: '7 momentos.\nUna velada.\nDos personas.',
+      subtitle: 'Una cena inmersiva para amigos cercanos.',
+      description: 'Una cena para amigos sobre la amistad, los recuerdos compartidos, la diversión y estar presentes juntos.',
+      introText: '7 momentos.\nUna velada.\nAmigos de verdad.',
       acts: [
         {
           id: 'bf-1',
@@ -734,9 +747,9 @@ export const scenariosData: Record<Language, Scenario[]> = {
     {
       id: 'best-friends',
       title: 'ЛУЧШИЕ ДРУЗЬЯ',
-      subtitle: 'Иммерсивный ужин на двоих.',
-      description: 'Ужин на двоих о дружбе, общих воспоминаниях, игривости и присутствии здесь и сейчас.',
-      introText: '7 моментов.\nОдин вечер.\nДва человека.',
+      subtitle: 'Иммерсивный ужин для близких друзей.',
+      description: 'Ужин для компании друзей о дружбе, общих воспоминаниях, драйве и присутствии здесь и сейчас.',
+      introText: '7 моментов.\nОдин вечер.\nНастоящие друзья.',
       acts: [
         {
           id: 'bf-1',
