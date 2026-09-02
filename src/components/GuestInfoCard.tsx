@@ -71,9 +71,9 @@ export function GuestInfoCard({ language, onBack }: { language: Language, onBack
         transition: { duration: 0.3 } 
       }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      className="absolute w-full h-full max-h-[550px] max-w-[340px] bg-bg-card border border-border-main p-8 flex flex-col items-center justify-center text-center rounded-2xl shadow-2xl origin-bottom"
+      className="absolute w-full h-full max-h-[550px] max-w-[340px] bg-bg-card border border-border-main flex flex-col items-center text-center rounded-2xl shadow-2xl origin-bottom overflow-hidden"
     >
-      <div className="flex-grow flex flex-col justify-start items-center w-full overflow-y-auto hide-scrollbar pt-2 pb-4">
+      <div className="w-full h-full flex flex-col items-center text-center overflow-y-auto hide-scrollbar px-8 py-8">
         <h2 className="text-2xl font-serif text-text-main mb-6 tracking-widest flex-shrink-0">{t.infoTitle}</h2>
         <p className="text-sm font-sans text-text-sec leading-relaxed mb-4 px-2 flex-shrink-0">{t.infoDesc1}</p>
         <p className="text-sm font-sans text-text-muted leading-relaxed mb-8 whitespace-pre-wrap px-2 flex-shrink-0">{t.infoDesc2}</p>
@@ -83,34 +83,34 @@ export function GuestInfoCard({ language, onBack }: { language: Language, onBack
         <h3 className="text-[10px] font-sans tracking-[0.2em] text-text-muted uppercase mb-4 flex-shrink-0">{t.howItWorks}</h3>
         <p className="text-xs font-sans text-text-muted leading-relaxed mb-2 px-2 flex-shrink-0">{t.howItWorks1}</p>
         <p className="text-xs font-sans text-text-muted leading-relaxed mb-2 px-2 flex-shrink-0">{t.howItWorks2}</p>
-        <p className="text-xs font-sans text-text-muted leading-relaxed mb-4 whitespace-pre-wrap px-2 flex-shrink-0">{t.howItWorks3}</p>
-      </div>
+        <p className="text-xs font-sans text-text-muted leading-relaxed mb-6 whitespace-pre-wrap px-2 flex-shrink-0">{t.howItWorks3}</p>
 
-      <div className="mt-2 mb-2 flex-shrink-0">
-        <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { setExitDirection('down'); setTimeout(onBack, 50); }} className="opacity-50 hover:opacity-100 transition-opacity p-4 flex items-center justify-center">
-          <CardsIcon size={24} className="text-text-main" />
-        </button>
-      </div>
-
-      <div className="relative w-full flex flex-col items-center flex-shrink-0 min-h-[60px]" onPointerDown={(e) => e.stopPropagation()}>
-        <div onClick={handleOrnamentTap} className="cursor-pointer py-4 px-8 select-none flex items-center justify-center gap-4 w-full">
-          <div className="w-8 h-[1px] bg-bg-border flex-shrink-0" />
-          <div className="w-2 h-2 rotate-45 border border-border-focus hover:border-border-light transition-colors flex-shrink-0" />
-          <div className="w-8 h-[1px] bg-bg-border flex-shrink-0" />
+        <div className="mt-2 mb-2 flex-shrink-0">
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { setExitDirection('down'); setTimeout(onBack, 50); }} className="opacity-50 hover:opacity-100 transition-opacity p-3 flex items-center justify-center">
+            <CardsIcon size={24} className="text-text-main" />
+          </button>
         </div>
-        
-        {showAuth && (
-          <motion.input
-            autoFocus
-            type="password"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            onKeyDown={handlePinSubmit}
-            animate={isShaking ? { x: [-10, 10, -10, 10, 0] } : {}}
-            transition={{ duration: 0.4 }}
-            className="absolute bottom-12 bg-bg-card border-b border-border-focus text-center text-text-main text-sm focus:outline-none focus:border-text-main w-24 tracking-widest pb-1 z-50"
-          />
-        )}
+
+        <div className="relative w-full flex flex-col items-center flex-shrink-0 min-h-[50px] pb-2" onPointerDown={(e) => e.stopPropagation()}>
+          <div onClick={handleOrnamentTap} className="cursor-pointer py-3 px-8 select-none flex items-center justify-center gap-4 w-full">
+            <div className="w-8 h-[1px] bg-bg-border flex-shrink-0" />
+            <div className="w-2 h-2 rotate-45 border border-border-focus hover:border-border-light transition-colors flex-shrink-0" />
+            <div className="w-8 h-[1px] bg-bg-border flex-shrink-0" />
+          </div>
+          
+          {showAuth && (
+            <motion.input
+              autoFocus
+              type="password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              onKeyDown={handlePinSubmit}
+              animate={isShaking ? { x: [-10, 10, -10, 10, 0] } : {}}
+              transition={{ duration: 0.4 }}
+              className="absolute -top-8 bg-bg-card border-b border-border-focus text-center text-text-main text-sm focus:outline-none focus:border-text-main w-24 tracking-widest pb-1 z-50"
+            />
+          )}
+        </div>
       </div>
     </motion.div>
   );
