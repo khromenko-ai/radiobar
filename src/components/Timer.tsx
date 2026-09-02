@@ -88,15 +88,7 @@ export function Timer({
 
   if (isNextActReady || isExpired) {
     if (isHostControlled && !isPastAct) {
-      return (
-        <div className="flex flex-col items-center w-full select-none">
-          <div className="flex items-center justify-center">
-            <span className="text-[10px] font-sans tracking-[0.2em] text-text-sub uppercase whitespace-nowrap">
-              {t.hostWaiting || "WAITING"}
-            </span>
-          </div>
-        </div>
-      );
+      return null;
     }
 
     return (
