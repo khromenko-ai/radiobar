@@ -9,6 +9,7 @@ import { Timer } from './components/Timer';
 import { ElasticPullTrigger } from './components/ElasticPullTrigger';
 import { GuestInfoCard } from './components/GuestInfoCard';
 import { FullscreenToggle } from './components/FullscreenToggle';
+import { QrScannerButton } from './components/QrScannerModal';
 import { HostApp } from './components/Host';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSessions, getSessions, saveSessions, fetchSessionById, DinnerSession, clearAllSiteData, pushSessionToFirebase } from './lib/store';
@@ -51,6 +52,7 @@ function TopActions({
         {session.devMode && (
           <div className="w-2 h-2 rounded-full bg-red-500" title="Dev Mode" />
         )}
+        <QrScannerButton language={session.language} />
         <FullscreenToggle />
         <ThemeToggle onReset={onReset} onDemo={toggleDevMode} />
         <LanguageToggle 
