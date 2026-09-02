@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useSession, AppState } from './hooks/useSession';
+import { useSession, AppState, SessionData } from './hooks/useSession';
 import { scenariosData, uiTranslations, Language } from './data/content';
 import { LanguageToggle } from './components/LanguageToggle';
 import { ThemeToggle } from './components/ThemeToggle';
@@ -199,23 +199,35 @@ function GuestApp() {
               current[session.hostSessionId] = hostLiveSession;
               saveSessions(current);
 
+              const isFirstSync = lastHostActIndexRef.current === null;
+              const isNewAct = isFirstSync || (hostLiveSession.currentActIndex !== undefined && hostLiveSession.currentActIndex !== lastHostActIndexRef.current);
+              const isNewStatus = lastHostStatusRef.current === null || (hostLiveSession.status !== undefined && hostLiveSession.status !== lastHostStatusRef.current);
+
               const targetState: AppState = hostLiveSession.status === 'WAITING' 
                 ? 'INTRO' 
                 : (hostLiveSession.status === 'COMPLETED' ? 'END' : 'ACTS');
 
-              updateSession({
+              const sessionUpdates: Partial<SessionData> = {
                 language: hostLiveSession.language,
                 scenarioId: hostLiveSession.scenarioId,
-                currentActIndex: hostLiveSession.currentActIndex,
-                maxActIndexReached: hostLiveSession.currentActIndex,
-                state: targetState,
-                actStartedAt: hostLiveSession.actStartedAt,
                 devMode: hostLiveSession.devMode,
-              });
+                actStartedAt: hostLiveSession.actStartedAt,
+              };
 
-              lastHostActIndexRef.current = hostLiveSession.currentActIndex;
-              lastHostStatusRef.current = hostLiveSession.status;
-              setIsNextActReady(false);
+              if (isNewAct) {
+                lastHostActIndexRef.current = hostLiveSession.currentActIndex;
+                sessionUpdates.currentActIndex = hostLiveSession.currentActIndex;
+                sessionUpdates.maxActIndexReached = Math.max(session.maxActIndexReached || 0, hostLiveSession.currentActIndex);
+                sessionUpdates.state = targetState;
+                setIsNextActReady(false);
+              }
+
+              if (isNewStatus) {
+                lastHostStatusRef.current = hostLiveSession.status;
+                sessionUpdates.state = targetState;
+              }
+
+              updateSession(sessionUpdates);
             }
           }
         }, (error) => {
@@ -249,14 +261,14 @@ function GuestApp() {
       lastHostActIndexRef.current = hostSession.currentActIndex;
       updateSession({
         currentActIndex: hostSession.currentActIndex,
-        maxActIndexReached: hostSession.currentActIndex, // Clamp strictly to host's current act
+        maxActIndexReached: Math.max(session.maxActIndexReached || 0, hostSession.currentActIndex),
         state: hostSession.status === 'WAITING' ? 'INTRO' : (hostSession.status === 'COMPLETED' ? 'END' : 'ACTS'),
       });
       setIsNextActReady(false);
     }
 
     // Sync status changes from host
-    if (hostSession.status !== lastHostStatusRef.current) {
+    if (hostSession.status && hostSession.status !== lastHostStatusRef.current) {
       lastHostStatusRef.current = hostSession.status;
       if (hostSession.status === 'WAITING' && session.state !== 'INTRO') {
         updateSession({ state: 'INTRO' });
@@ -266,7 +278,7 @@ function GuestApp() {
         updateSession({ state: 'END' });
       }
     }
-  }, [hostSession, session.scenarioId, session.currentActIndex, session.state, session.language]);
+  }, [hostSession, session.scenarioId, session.language]);
 
   const currentLangCode = (isHostControlled && hostSession?.language) ? hostSession.language : session.language;
   const validLanguage: Language = (currentLangCode === 'EN' || currentLangCode === 'ES' || currentLangCode === 'RU') 
@@ -276,9 +288,7 @@ function GuestApp() {
   const currentScenarios = scenariosData[validLanguage] || scenariosData.RU;
 
   const activeScenarioId = hostSession?.scenarioId || session.scenarioId;
-  const activeActIndex = (isHostControlled && hostSession?.currentActIndex !== undefined)
-    ? hostSession.currentActIndex
-    : session.currentActIndex;
+  const activeActIndex = session.currentActIndex ?? 0;
   // Always use hostSession's actStartedAt when connected to a host
   const activeActStartedAt = isHostControlled ? hostSession?.actStartedAt : (session.actStartedAt || Date.now());
   const isPaused = isHostControlled ? (hostSession?.status === 'PAUSED') : false;
@@ -527,14 +537,12 @@ function GuestApp() {
       if (scenario) {
         goToAct(scenario.acts.length - 1);
         updateSession({ state: 'ACTS' });
-      } else {
-        updateSession({ state: isHostControlled ? 'INTRO' : 'HOME' });
       }
     } else if (session.state === 'INFO') {
-      updateSession({ state: isHostControlled ? 'INTRO' : 'HOME' });
-    } else if (session.state === 'INTRO' && !isHostControlled) {
-      updateSession({ state: 'HOME', scenarioId: null });
+      updateSession({ state: 'HOME' });
     }
+    // In INTRO: navigation backward stops here.
+    // Returning to the main screen with the deck is strictly via the "Выход" button or theme triple-click.
   };
 
   const handleGoForward = () => {
@@ -599,35 +607,70 @@ function GuestApp() {
     touchStartX.current = null;
   };
 
-  // Trackpad horizontal scroll navigation between acts & scenes
+  // Desktop wheel/trackpad and keyboard navigation between acts & scenes
   const wheelAccumulatorXRef = useRef(0);
   const wheelNavCooldownRef = useRef(false);
+  const wheelResetTimerRef = useRef<any>(null);
 
-  const handleContainerWheel = (e: React.WheelEvent) => {
-    if (session.state === 'HOME') return;
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 1.2 && Math.abs(e.deltaX) > 6) {
+  useEffect(() => {
+    const handleGlobalWheel = (e: WheelEvent) => {
+      // Don't intercept when on home card deck (it has its own card deck wheel handler)
+      if (effectiveState === 'HOME' || effectiveState === 'INFO') return;
       if (wheelNavCooldownRef.current) return;
 
-      wheelAccumulatorXRef.current += e.deltaX;
-      const HORIZONTAL_WHEEL_THRESHOLD = 35;
+      const absX = Math.abs(e.deltaX);
+      const absY = Math.abs(e.deltaY);
 
-      if (wheelAccumulatorXRef.current > HORIZONTAL_WHEEL_THRESHOLD) {
-        handleGoForward();
-        wheelNavCooldownRef.current = true;
-        wheelAccumulatorXRef.current = 0;
-        setTimeout(() => { wheelNavCooldownRef.current = false; }, 400);
-      } else if (wheelAccumulatorXRef.current < -HORIZONTAL_WHEEL_THRESHOLD) {
-        handleGoBack();
-        wheelNavCooldownRef.current = true;
-        wheelAccumulatorXRef.current = 0;
-        setTimeout(() => { wheelNavCooldownRef.current = false; }, 400);
+      // Horizontal trackpad gesture (swipe left to go forward, swipe right to go back)
+      if (absX > absY && absX > 5) {
+        wheelAccumulatorXRef.current += e.deltaX;
+
+        if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
+        wheelResetTimerRef.current = setTimeout(() => {
+          wheelAccumulatorXRef.current = 0;
+        }, 220);
+
+        const HORIZONTAL_THRESHOLD = 26;
+        if (wheelAccumulatorXRef.current < -HORIZONTAL_THRESHOLD) {
+          wheelNavCooldownRef.current = true;
+          wheelAccumulatorXRef.current = 0;
+          handleGoBack();
+          setTimeout(() => { wheelNavCooldownRef.current = false; }, 400);
+          return;
+        } else if (wheelAccumulatorXRef.current > HORIZONTAL_THRESHOLD) {
+          wheelNavCooldownRef.current = true;
+          wheelAccumulatorXRef.current = 0;
+          handleGoForward();
+          setTimeout(() => { wheelNavCooldownRef.current = false; }, 400);
+          return;
+        }
       }
-    }
-  };
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (effectiveState === 'HOME' || effectiveState === 'INFO') return;
+
+      if (e.key === 'ArrowLeft' || e.key === 'Backspace') {
+        e.preventDefault();
+        handleGoBack();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleGoForward();
+      }
+    };
+
+    window.addEventListener('wheel', handleGlobalWheel, { passive: true });
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('wheel', handleGlobalWheel);
+      window.removeEventListener('keydown', handleKeyDown);
+      if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
+    };
+  }, [effectiveState, activeActIndex, isPastAct, maxUnlockedActIndex, isNextActReady, scenario]);
 
   return (
     <div 
-      onWheel={handleContainerWheel}
       className="h-screen h-[100dvh] w-full bg-bg-main text-text-main overflow-hidden flex flex-col font-sans relative selection:bg-bg-border selection:text-text-main select-none hide-scrollbar"
     >
       
