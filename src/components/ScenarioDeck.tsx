@@ -98,7 +98,7 @@ export function ScenarioDeck({
   return (
     <div 
       onWheel={handleWheel}
-      className="relative w-full flex-1 min-h-[300px] max-h-[500px] my-auto flex items-center justify-center perspective-[1000px] overflow-hidden hide-scrollbar"
+      className="relative w-full flex-1 min-h-[300px] max-h-[500px] my-auto flex items-center justify-center perspective-[1000px] overflow-visible hide-scrollbar"
     >
       <AnimatePresence custom={exitDirection}>
         {stackItems.map((item, i) => {
@@ -127,7 +127,7 @@ export function ScenarioDeck({
                 y: 80 
               }}
               animate={{ 
-                opacity: 1 - i * 0.15, 
+                opacity: 1, 
                 scale: 1 - i * 0.05, 
                 y: i * 16,
                 zIndex: 10 - i
@@ -140,7 +140,11 @@ export function ScenarioDeck({
                 transition: { duration: 0.3 }
               }}
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute w-full h-[88%] max-h-[440px] max-w-[330px] bg-bg-card border border-border-main flex flex-col items-center justify-center text-center rounded-2xl shadow-2xl origin-bottom overflow-hidden select-none"
+              className={`absolute w-full h-[88%] max-h-[440px] max-w-[330px] bg-bg-card border border-border-main flex flex-col items-center justify-center text-center rounded-2xl ${
+                isTop 
+                  ? 'shadow-[0_8px_24px_-6px_rgba(0,0,0,0.007)] dark:shadow-[0_16px_36px_-10px_rgba(0,0,0,0.45)]' 
+                  : 'shadow-[0_4px_12px_-4px_rgba(0,0,0,0.004)] dark:shadow-none'
+              } origin-bottom overflow-hidden select-none`}
               style={{
                 cursor: isTop ? 'grab' : 'auto'
               }}
@@ -160,7 +164,7 @@ export function ScenarioDeck({
                 
                 {/* Smooth Fade Gradient from photo into card body */}
                 <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-bg-card via-bg-card/85 to-transparent flex flex-col justify-end items-center px-4 pb-2">
-                  <h2 className="text-2xl sm:text-[26px] font-serif text-text-main tracking-wide leading-tight text-center drop-shadow-sm">
+                  <h2 className="text-2xl sm:text-[26px] font-serif text-text-main tracking-wide leading-tight text-center">
                     {item.title}
                   </h2>
                 </div>
@@ -177,7 +181,7 @@ export function ScenarioDeck({
                   <div className="flex items-center justify-center my-3 w-28 mx-auto select-none pointer-events-none">
                     <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
                     <div className="mx-2 flex items-center justify-center">
-                      <div className="w-2 h-2 rotate-45 border border-text-main bg-bg-card shadow-sm" />
+                      <div className="w-2 h-2 rotate-45 border border-text-main bg-bg-card" />
                     </div>
                     <div className="w-8 h-[1px] bg-text-sec/80 flex-shrink-0" />
                   </div>

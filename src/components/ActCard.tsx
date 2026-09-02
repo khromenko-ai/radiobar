@@ -38,7 +38,7 @@ export function ActCard({ act, language }: { act?: Act; language: Language }) {
           
           {/* Bottom Fade Gradient into page background */}
           <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-bg-main via-bg-main/80 to-transparent pointer-events-none flex flex-col justify-end items-center px-6 pb-4">
-            <h2 className="text-2xl sm:text-3xl font-serif text-text-main tracking-wide text-center drop-shadow-sm">
+            <h2 className="text-2xl sm:text-3xl font-serif text-text-main tracking-wide text-center">
               {act.title}
             </h2>
           </div>

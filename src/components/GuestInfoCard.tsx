@@ -228,7 +228,7 @@ export function GuestInfoCard({ language, onBack }: { language: Language, onBack
       exit={{ opacity: 0, scale: 0.9, y: 200, transition: { duration: 0.25 } }}
       style={{ x, y, rotate, opacity }}
       transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-      className="absolute w-full h-full max-h-[550px] max-w-[340px] bg-bg-card border border-border-main flex flex-col items-center text-center rounded-2xl shadow-2xl origin-bottom overflow-hidden cursor-grab active:cursor-grabbing select-none"
+      className="absolute w-full h-full max-h-[550px] max-w-[340px] bg-bg-card border border-border-main flex flex-col items-center text-center rounded-2xl shadow-[0_8px_24px_-6px_rgba(0,0,0,0.007)] dark:shadow-[0_16px_36px_-10px_rgba(0,0,0,0.45)] origin-bottom overflow-hidden cursor-grab active:cursor-grabbing select-none"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
