@@ -1,14 +1,24 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, Firestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  projectId: "tonal-maker-5jf39",
-  appId: "1:943734494902:web:cad318521cb16700c2f817",
-  apiKey: "AIzaSyBs9N-FVBF3fev2tXv75TnMKfxA6BBXE5U",
-  authDomain: "tonal-maker-5jf39.firebaseapp.com",
-  storageBucket: "tonal-maker-5jf39.firebasestorage.app",
-  messagingSenderId: "943734494902",
+  projectId: "poetic-metrics-72sm5",
+  appId: "1:357175785566:web:0ae57a7a95f8bc6c81dccf",
+  apiKey: "AIzaSyAyfxOmHV55LoTlk9lwQml6I_7k1UWiOCk",
+  authDomain: "poetic-metrics-72sm5.firebaseapp.com",
+  storageBucket: "poetic-metrics-72sm5.firebasestorage.app",
+  messagingSenderId: "357175785566",
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, "ai-studio-immersivedinnerm-468506d3-d3d6-4209-a400-4d79279727c4");
+let app;
+let db: Firestore | any = null;
+
+try {
+  app = initializeApp(firebaseConfig);
+  db = getFirestore(app, "ai-studio-radiodinner-49f854f9-5642-4cc6-a1bc-173e6ac776cc");
+} catch (e) {
+  console.error("Firebase init error:", e);
+}
+
+export { db };
+

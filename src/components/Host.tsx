@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { getHostAuth, setHostAuth, useSessions, DinnerSession } from '../lib/store';
+import { getHostAuth, setHostAuth, useSessions, DinnerSession, clearAllSiteData } from '../lib/store';
 import { scenariosData, Language, uiTranslations, getActImage } from '../data/content';
 import { useSession } from '../hooks/useSession';
-import { hostP2PNode, buildGuestUrl } from '../lib/p2p';
+import { buildGuestUrl } from '../lib/store';
 import { LanguageToggle } from './LanguageToggle';
 import { ThemeToggle } from './ThemeToggle';
 import { FullscreenToggle } from './FullscreenToggle';
@@ -130,6 +130,10 @@ function HostTopBar({
           current={sessionState.language} 
           onChange={(l) => updateGlobalSession({ language: l })}
           onDevModeToggle={toggleDevMode}
+          onExitSession={() => {
+            clearAllSiteData();
+            onExit();
+          }}
         />
       </div>
     </div>
@@ -429,12 +433,6 @@ function HostSessionControl({
 
   const currentAct = scenario.acts[session.currentActIndex];
   const nextAct = scenario.acts[session.currentActIndex + 1];
-
-  // Initialize host P2P node for this session so guests can connect directly to this device
-  useEffect(() => {
-    hostP2PNode.init(session.id, session);
-    hostP2PNode.updateState(session);
-  }, [session.id, session]);
 
   const handleStart = () => {
     updateSession(session.id, { 

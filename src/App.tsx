@@ -11,8 +11,9 @@ import { GuestInfoCard } from './components/GuestInfoCard';
 import { FullscreenToggle } from './components/FullscreenToggle';
 import { HostApp } from './components/Host';
 import { motion, AnimatePresence } from 'motion/react';
-import { useSessions, getSessions, saveSessions, fetchSessionById, DinnerSession } from './lib/store';
-import { guestP2PNode } from './lib/p2p';
+import { useSessions, getSessions, saveSessions, fetchSessionById, DinnerSession, clearAllSiteData } from './lib/store';
+import { db } from './lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 function ScrollToTopOnMount({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
   useEffect(() => {
@@ -29,6 +30,7 @@ function TopActions({
   updateHostStoreSession,
   onReset, 
   toggleDevMode, 
+  onExitSession,
   leftContent, 
   centerContent,
   isHostControlled,
@@ -60,6 +62,7 @@ function TopActions({
             }
           }}
           onDevModeToggle={toggleDevMode}
+          onExitSession={onExitSession}
         />
       </div>
       {centerContent && (
@@ -110,6 +113,7 @@ function GuestApp() {
           id: sid,
           tableName: tableParam ? decodeURIComponent(tableParam) : (storedSessions[sid]?.tableName || `Table ${sid}`),
           scenarioId: targetScenario,
+          language: targetLang,
           currentActIndex: validActIdx,
           status: parsedStatus,
           actStartedAt: parsedStartedAt,
@@ -132,15 +136,6 @@ function GuestApp() {
           actStartedAt: parsedStartedAt,
           language: targetLang,
           devMode: isDevMode,
-        });
-
-        // Initialize direct Peer-to-Peer connection to host's device
-        guestP2PNode.init(sid, (hostLiveSession) => {
-          if (hostLiveSession && hostLiveSession.id === sid) {
-            const current = getSessions();
-            current[sid] = hostLiveSession;
-            saveSessions(current);
-          }
         });
 
         // Background server fetch as fallback
@@ -178,19 +173,35 @@ function GuestApp() {
     }
   }, []);
 
-  // Connect guest P2P node whenever hostSessionId changes
+  const unsubRef = useRef<(() => void) | null>(null);
+
+  const cleanupSubscription = () => {
+    if (unsubRef.current) {
+      unsubRef.current();
+      unsubRef.current = null;
+    }
+  };
+
+  // Connect to host session in Firestore whenever hostSessionId changes
   useEffect(() => {
+    cleanupSubscription();
+    
     if (session.hostSessionId) {
-      guestP2PNode.init(session.hostSessionId, (hostLiveSession) => {
-        if (hostLiveSession && hostLiveSession.id === session.hostSessionId) {
-          const current = getSessions();
-          current[session.hostSessionId] = hostLiveSession;
-          saveSessions(current);
+      unsubRef.current = onSnapshot(doc(db, 'sessions', session.hostSessionId), (snapshot) => {
+        if (snapshot.exists()) {
+          const hostLiveSession = snapshot.data() as DinnerSession;
+          if (hostLiveSession && hostLiveSession.id === session.hostSessionId) {
+            const current = getSessions();
+            current[session.hostSessionId] = hostLiveSession;
+            saveSessions(current);
+          }
         }
+      }, (error) => {
+        console.error("Guest Firebase subscription error", error);
       });
     }
     return () => {
-      // Keep connection active during session
+      cleanupSubscription();
     };
   }, [session.hostSessionId]);
 
@@ -247,6 +258,28 @@ function GuestApp() {
 
   const scenario = activeScenarioId ? currentScenarios.find(s => s.id === activeScenarioId) : null;
   const [isNextActReady, setIsNextActReady] = useState(false);
+
+  const handleExitSession = () => {
+    // 1. Destroy guest Firestore listeners
+    cleanupSubscription();
+
+    // 2. Clear all local storage, session storage, and cookies
+    clearAllSiteData();
+
+    // 3. Reset URL parameters to clean root path
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', '/');
+    }
+
+    // 4. Reset host tracking refs
+    lastHostActIndexRef.current = null;
+    lastHostStatusRef.current = null;
+
+    // 5. Reset session state to HOME and clear host association
+    resetSession();
+    setIsNextActReady(false);
+  };
+
 
   // Derive safe rendering state immediately
   let effectiveState = session.state;
@@ -478,6 +511,7 @@ function GuestApp() {
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
+              onExitSession={handleExitSession}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
             />
@@ -534,6 +568,7 @@ function GuestApp() {
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
+              onExitSession={handleExitSession}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
             />
@@ -566,6 +601,7 @@ function GuestApp() {
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
+              onExitSession={handleExitSession}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
             />
@@ -607,6 +643,7 @@ function GuestApp() {
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
+              onExitSession={handleExitSession}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
               leftContent={
@@ -662,8 +699,10 @@ function GuestApp() {
             <TopActions 
               session={session} 
               updateSession={updateSession} 
+              updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
               toggleDevMode={toggleDevMode}
+              onExitSession={handleExitSession}
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
             />

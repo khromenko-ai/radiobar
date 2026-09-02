@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { hostP2PNode } from './p2p';
 import { db } from './firebase';
 import { doc, setDoc, getDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { Language } from '../data/content';
@@ -52,9 +51,9 @@ const pruneExpiredSessions = (sessions: Record<string, DinnerSession>): Record<s
 
 export const getSessions = (): Record<string, DinnerSession> => {
   if (typeof window === 'undefined') return {};
-  const data = localStorage.getItem(STORAGE_KEY);
-  if (!data) return {};
   try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    if (!data) return {};
     const parsed = JSON.parse(data);
     const pruned = pruneExpiredSessions(parsed);
     if (pruned !== parsed) {
@@ -68,14 +67,17 @@ export const getSessions = (): Record<string, DinnerSession> => {
 
 export const fetchSessionById = async (id: string): Promise<DinnerSession | null> => {
   try {
-    const docRef = doc(db, 'sessions', id);
+    if (!db) return null;
+    const docRef = doc(db, "sessions", id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const session = docSnap.data() as DinnerSession;
       if (session && session.id) {
         const local = getSessions();
         local[id] = session;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
+        } catch {}
         window.dispatchEvent(new Event('sessions-updated'));
         return session;
       }
@@ -90,7 +92,8 @@ export const fetchSessionById = async (id: string): Promise<DinnerSession | null
 // Push to Firestore in background
 const pushSessionToFirebase = async (session: DinnerSession) => {
   try {
-    await setDoc(doc(db, 'sessions', session.id), session);
+    if (!db) return;
+    await setDoc(doc(db, "sessions", session.id), session);
   } catch (e) {
     console.error("Firebase save error", e);
   }
@@ -99,33 +102,82 @@ const pushSessionToFirebase = async (session: DinnerSession) => {
 export const saveSessions = (sessions: Record<string, DinnerSession>) => {
   if (typeof window === 'undefined') return;
   const pruned = pruneExpiredSessions(sessions);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
+  } catch {}
   window.dispatchEvent(new Event('sessions-updated'));
   
   if (broadcastChannel) {
     try {
-      broadcastChannel.postMessage({ type: 'SESSIONS_UPDATE', sessions: pruned });
+      try { broadcastChannel.postMessage({ type: "SESSIONS_UPDATE", sessions: pruned }); } catch(e){}
     } catch {
       // Ignore
-    }
-  }
-
-  // Update legacy P2P host just in case any component still relies on it
-  for (const s of Object.values(pruned)) {
-    if (s && s.id) {
-      hostP2PNode.updateState(s);
     }
   }
 };
 
 export const getHostAuth = () => {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem('immersive_host_auth') === 'true';
+  try {
+    return localStorage.getItem('immersive_host_auth') === 'true';
+  } catch {
+    return false;
+  }
+};
+
+export const buildGuestUrl = (session: DinnerSession, isDevMode?: boolean): string => {
+  const baseUrl = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://radio.khromenko.com';
+  const urlParams = new URLSearchParams();
+  urlParams.set('session', session.id);
+  urlParams.set('scenario', session.scenarioId);
+  urlParams.set('act', session.currentActIndex.toString());
+  urlParams.set('table', session.tableName);
+  urlParams.set('status', session.status);
+  if (session.language) {
+    urlParams.set('lang', session.language);
+  }
+  
+  if (session.actStartedAt) urlParams.set('startedAt', session.actStartedAt.toString());
+  if (session.pausedAt) urlParams.set('pausedAt', session.pausedAt.toString());
+  if (session.devMode || isDevMode) urlParams.set('dev', '1');
+
+  return `${baseUrl}/?${urlParams.toString()}`;
 };
 
 export const setHostAuth = (val: boolean) => {
   if (typeof window === 'undefined') return;
-  localStorage.setItem('immersive_host_auth', val ? 'true' : 'false');
+  try {
+    localStorage.setItem('immersive_host_auth', val ? 'true' : 'false');
+  } catch {}
+};
+
+export const clearAllSiteData = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.clear();
+  } catch (e) {}
+  try {
+    try { sessionStorage.clear(); } catch(e) {}
+  } catch (e) {}
+  try {
+    const cookies = document.cookie.split(';');
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i];
+      const eqPos = cookie.indexOf('=');
+      const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+      if (name) {
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+        document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+        const hostParts = window.location.hostname.split('.');
+        while (hostParts.length > 1) {
+          const domain = hostParts.join('.');
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${domain}`;
+          hostParts.shift();
+        }
+      }
+    }
+  } catch (e) {}
+  window.dispatchEvent(new Event('sessions-updated'));
 };
 
 export function useSessions() {
@@ -155,7 +207,8 @@ export function useSessions() {
     const unsubscribes: (() => void)[] = [];
     const local = getSessions();
     Object.keys(local).forEach(id => {
-       const unsub = onSnapshot(doc(db, 'sessions', id), (docSnapshot) => {
+       if (!db) return;
+       const unsub = onSnapshot(doc(db, "sessions", id), (docSnapshot) => {
          if (docSnapshot.exists() && isMounted) {
            const remote = docSnapshot.data() as DinnerSession;
            const currentLocal = getSessions();
@@ -247,13 +300,15 @@ export function useSessions() {
     const current = getSessions();
     if (current[id]) {
       delete current[id];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+      } catch {}
       window.dispatchEvent(new Event('sessions-updated'));
       if (broadcastChannel) {
-        broadcastChannel.postMessage({ type: 'SESSIONS_UPDATE', sessions: current });
+        try { broadcastChannel.postMessage({ type: "SESSIONS_UPDATE", sessions: current }); } catch(e){}
       }
       try {
-        deleteDoc(doc(db, 'sessions', id));
+        if (db) deleteDoc(doc(db, "sessions", id));
       } catch (e) {}
     }
   }, []);

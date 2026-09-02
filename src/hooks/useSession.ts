@@ -27,35 +27,41 @@ const DEFAULT_SESSION: SessionData = {
 
 export function useSession() {
   const [session, setSessionState] = useState<SessionData>(() => {
-    const saved = localStorage.getItem('immersive_dinner_session');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const validLangs: Language[] = ['EN', 'ES', 'RU'];
-        const lang: Language = validLangs.includes(parsed.language) ? parsed.language : 'ES';
-        const validStates: AppState[] = ['HOME', 'INFO', 'INTRO', 'ACTS', 'END'];
-        let state: AppState = validStates.includes(parsed.state) ? parsed.state : 'HOME';
+    try {
+      const saved = localStorage.getItem('immersive_dinner_session');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const validLangs: Language[] = ['EN', 'ES', 'RU'];
+          const lang: Language = validLangs.includes(parsed.language) ? parsed.language : 'ES';
+          const validStates: AppState[] = ['HOME', 'INFO', 'INTRO', 'ACTS', 'END'];
+          let state: AppState = validStates.includes(parsed.state) ? parsed.state : 'HOME';
 
-        if ((state === 'INTRO' || state === 'ACTS') && !parsed.scenarioId) {
-          state = 'HOME';
+          if ((state === 'INTRO' || state === 'ACTS') && !parsed.scenarioId) {
+            state = 'HOME';
+          }
+
+          return {
+            ...DEFAULT_SESSION,
+            ...parsed,
+            language: lang,
+            state,
+            scenarioId: parsed.scenarioId || null,
+          };
+        } catch (e) {
+          console.error('Failed to parse session', e);
         }
-
-        return {
-          ...DEFAULT_SESSION,
-          ...parsed,
-          language: lang,
-          state,
-          scenarioId: parsed.scenarioId || null,
-        };
-      } catch (e) {
-        console.error('Failed to parse session', e);
       }
+    } catch (e) {
+      console.error('localStorage access denied', e);
     }
     return DEFAULT_SESSION;
   });
 
   useEffect(() => {
-    localStorage.setItem('immersive_dinner_session', JSON.stringify(session));
+    try {
+      localStorage.setItem('immersive_dinner_session', JSON.stringify(session));
+    } catch {}
   }, [session]);
 
   const updateSession = (updates: Partial<SessionData>) => {
