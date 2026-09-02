@@ -186,19 +186,23 @@ function GuestApp() {
   useEffect(() => {
     cleanupSubscription();
     
-    if (session.hostSessionId) {
-      unsubRef.current = onSnapshot(doc(db, 'sessions', session.hostSessionId), (snapshot) => {
-        if (snapshot.exists()) {
-          const hostLiveSession = snapshot.data() as DinnerSession;
-          if (hostLiveSession && hostLiveSession.id === session.hostSessionId) {
-            const current = getSessions();
-            current[session.hostSessionId] = hostLiveSession;
-            saveSessions(current);
+    if (session.hostSessionId && db) {
+      try {
+        unsubRef.current = onSnapshot(doc(db, 'sessions', session.hostSessionId), (snapshot) => {
+          if (snapshot.exists()) {
+            const hostLiveSession = snapshot.data() as DinnerSession;
+            if (hostLiveSession && hostLiveSession.id === session.hostSessionId) {
+              const current = getSessions();
+              current[session.hostSessionId] = hostLiveSession;
+              saveSessions(current);
+            }
           }
-        }
-      }, (error) => {
-        console.error("Guest Firebase subscription error", error);
-      });
+        }, (error) => {
+          console.error("Guest Firebase subscription error", error);
+        });
+      } catch (e) {
+        console.error("Firestore onSnapshot error:", e);
+      }
     }
     return () => {
       cleanupSubscription();
@@ -283,16 +287,16 @@ function GuestApp() {
 
   // Derive safe rendering state immediately
   let effectiveState = session.state;
-  if ((effectiveState === 'INTRO' || effectiveState === 'ACTS') && !scenario) {
+  if ((effectiveState === 'INTRO' || effectiveState === 'ACTS' || effectiveState === 'END') && !scenario) {
     effectiveState = 'HOME';
   }
   if (!['HOME', 'INFO', 'INTRO', 'ACTS', 'END'].includes(effectiveState)) {
     effectiveState = 'HOME';
   }
 
-  // Safety fallback: if in INTRO or ACTS without a valid scenario, restore HOME in session state
+  // Safety fallback: if in INTRO, ACTS, or END without a valid scenario, restore HOME in session state
   useEffect(() => {
-    if ((session.state === 'INTRO' || session.state === 'ACTS') && !scenario) {
+    if ((session.state === 'INTRO' || session.state === 'ACTS' || session.state === 'END') && !scenario) {
       updateSession({ state: 'HOME', scenarioId: null });
     }
   }, [session.state, scenario]);
@@ -515,6 +519,16 @@ function GuestApp() {
               isHostControlled={isHostControlled}
               tableName={hostSession?.tableName}
             />
+
+            <div className="text-center mt-2 mb-1 flex-shrink-0 z-10">
+              <h1 className="text-lg sm:text-xl font-serif tracking-[0.1em] text-text-sec whitespace-pre-wrap leading-[1.2] sm:leading-[1.4]">
+                {t.welcomeTitle}
+              </h1>
+              <p className="text-[11px] sm:text-xs font-sans tracking-widest text-text-sub mt-1">
+                {t.welcomeSubtitle}
+              </p>
+            </div>
+
             <ScenarioDeck 
               language={validLanguage} 
               activeSessionScenarioId={activeScenarioId}
@@ -541,15 +555,6 @@ function GuestApp() {
                 }
               }} 
             />
-
-            <div className="text-center mt-2 mb-2 flex-shrink-0">
-              <h1 className="text-lg sm:text-xl font-serif tracking-[0.1em] text-text-sec whitespace-pre-wrap leading-[1.2] sm:leading-[1.4]">
-                {t.welcomeTitle}
-              </h1>
-              <p className="text-[11px] sm:text-xs font-sans tracking-widest text-text-sub mt-1.5 sm:mt-2">
-                {t.welcomeSubtitle}
-              </p>
-            </div>
           </motion.div>
         )}
 
