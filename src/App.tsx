@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useSession } from './hooks/useSession';
+import { useSession, AppState } from './hooks/useSession';
 import { scenariosData, uiTranslations, Language } from './data/content';
 import { LanguageToggle } from './components/LanguageToggle';
 import { ThemeToggle } from './components/ThemeToggle';
@@ -11,7 +11,7 @@ import { GuestInfoCard } from './components/GuestInfoCard';
 import { FullscreenToggle } from './components/FullscreenToggle';
 import { HostApp } from './components/Host';
 import { motion, AnimatePresence } from 'motion/react';
-import { useSessions, getSessions, saveSessions, fetchSessionById, DinnerSession, clearAllSiteData } from './lib/store';
+import { useSessions, getSessions, saveSessions, fetchSessionById, DinnerSession, clearAllSiteData, pushSessionToFirebase } from './lib/store';
 import { db } from './lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 
@@ -195,6 +195,24 @@ function GuestApp() {
               const current = getSessions();
               current[session.hostSessionId] = hostLiveSession;
               saveSessions(current);
+
+              const targetState: AppState = hostLiveSession.status === 'WAITING' 
+                ? 'INTRO' 
+                : (hostLiveSession.status === 'COMPLETED' ? 'END' : 'ACTS');
+
+              updateSession({
+                language: hostLiveSession.language,
+                scenarioId: hostLiveSession.scenarioId,
+                currentActIndex: hostLiveSession.currentActIndex,
+                maxActIndexReached: hostLiveSession.currentActIndex,
+                state: targetState,
+                actStartedAt: hostLiveSession.actStartedAt,
+                devMode: hostLiveSession.devMode,
+              });
+
+              lastHostActIndexRef.current = hostLiveSession.currentActIndex;
+              lastHostStatusRef.current = hostLiveSession.status;
+              setIsNextActReady(false);
             }
           }
         }, (error) => {
@@ -209,7 +227,7 @@ function GuestApp() {
     };
   }, [session.hostSessionId]);
 
-  // Instant synchronization with hostSession changes
+  // Instant synchronization with hostSession changes (fallback/local updates)
   useEffect(() => {
     if (!hostSession) return;
 
@@ -247,14 +265,17 @@ function GuestApp() {
     }
   }, [hostSession, session.scenarioId, session.currentActIndex, session.state, session.language]);
 
-  const validLanguage: Language = (session.language === 'EN' || session.language === 'ES' || session.language === 'RU') 
-    ? session.language 
+  const currentLangCode = (isHostControlled && hostSession?.language) ? hostSession.language : session.language;
+  const validLanguage: Language = (currentLangCode === 'EN' || currentLangCode === 'ES' || currentLangCode === 'RU') 
+    ? currentLangCode 
     : 'RU';
   const t = uiTranslations[validLanguage] || uiTranslations.RU;
   const currentScenarios = scenariosData[validLanguage] || scenariosData.RU;
 
   const activeScenarioId = hostSession?.scenarioId || session.scenarioId;
-  const activeActIndex = session.currentActIndex;
+  const activeActIndex = (isHostControlled && hostSession?.currentActIndex !== undefined)
+    ? hostSession.currentActIndex
+    : session.currentActIndex;
   // Always use hostSession's actStartedAt when connected to a host
   const activeActStartedAt = isHostControlled ? hostSession?.actStartedAt : (session.actStartedAt || Date.now());
   const isPaused = isHostControlled ? (hostSession?.status === 'PAUSED') : false;
@@ -264,6 +285,22 @@ function GuestApp() {
   const [isNextActReady, setIsNextActReady] = useState(false);
 
   const handleExitSession = () => {
+    if (session.hostSessionId) {
+      const updated: DinnerSession = {
+        id: session.hostSessionId,
+        tableName: hostSession?.tableName || `Table ${session.hostSessionId}`,
+        scenarioId: activeScenarioId || 'first-date',
+        language: validLanguage,
+        currentActIndex: activeActIndex,
+        status: 'COMPLETED',
+        actStartedAt: activeActStartedAt,
+        pausedAt: null,
+        completedAt: Date.now(),
+        updatedAt: Date.now(),
+        devMode: !!(session.devMode || hostSession?.devMode)
+      };
+      pushSessionToFirebase(updated);
+    }
     // 1. Destroy guest Firestore listeners
     cleanupSubscription();
 
@@ -324,9 +361,8 @@ function GuestApp() {
   const DURATION_MS = effectiveDevMode ? 10000 : 10 * 60 * 1000;
 
   // Maximum act unlocked:
-  // In a host-controlled session, guest can NEVER go past hostSession.currentActIndex unless timer expires
   const maxUnlockedActIndex = isHostControlled && hostSession
-    ? hostSession.currentActIndex
+    ? Math.max(hostSession.currentActIndex ?? 0, session.maxActIndexReached ?? 0)
     : (session.maxActIndexReached || 0);
 
   // If looking at a past completed act, next moment is immediately available to return to
@@ -342,16 +378,92 @@ function GuestApp() {
     window.scrollTo(0, 0);
   }, [session.state]);
 
+  const handleStartScenario = (id: string) => {
+    const sid = session.hostSessionId || Math.random().toString(36).substring(2, 8).toUpperCase();
+    const newGuestSession: DinnerSession = {
+      id: sid,
+      tableName: hostSession?.tableName || `Table ${sid}`,
+      scenarioId: id,
+      language: validLanguage,
+      currentActIndex: 0,
+      status: 'WAITING',
+      actStartedAt: null,
+      pausedAt: null,
+      completedAt: null,
+      updatedAt: Date.now(),
+      devMode: !!(session.devMode || hostSession?.devMode)
+    };
+    pushSessionToFirebase(newGuestSession);
+
+    const stored = getSessions();
+    stored[sid] = newGuestSession;
+    saveSessions(stored);
+
+    updateSession({
+      hostSessionId: sid,
+      scenarioId: id,
+      state: 'INTRO',
+      currentActIndex: 0,
+      maxActIndexReached: 0,
+      actStartedAt: null
+    });
+    setIsNextActReady(false);
+  };
+
   const handleStartCourse = () => {
-    if (isHostControlled && session.hostSessionId) {
-      updateHostStoreSession(session.hostSessionId, {
-        status: 'ACTIVE',
-        currentActIndex: 0,
-        actStartedAt: Date.now(),
-        pausedAt: null
-      });
+    const sid = session.hostSessionId || Math.random().toString(36).substring(2, 8).toUpperCase();
+    const now = Date.now();
+    const updated: DinnerSession = {
+      id: sid,
+      tableName: hostSession?.tableName || `Table ${sid}`,
+      scenarioId: activeScenarioId || 'first-date',
+      language: validLanguage,
+      currentActIndex: 0,
+      status: 'ACTIVE',
+      actStartedAt: now,
+      pausedAt: null,
+      completedAt: null,
+      updatedAt: now,
+      devMode: !!(session.devMode || hostSession?.devMode)
+    };
+    pushSessionToFirebase(updated);
+
+    const stored = getSessions();
+    stored[sid] = updated;
+    saveSessions(stored);
+
+    updateSession({
+      hostSessionId: sid,
+      state: 'ACTS',
+      currentActIndex: 0,
+      maxActIndexReached: Math.max(session.maxActIndexReached || 0, 0),
+      actStartedAt: now
+    });
+    setIsNextActReady(false);
+  };
+
+  const handleEndExperience = () => {
+    const now = Date.now();
+    if (session.hostSessionId) {
+      const updated: DinnerSession = {
+        id: session.hostSessionId,
+        tableName: hostSession?.tableName || `Table ${session.hostSessionId}`,
+        scenarioId: activeScenarioId || 'first-date',
+        language: validLanguage,
+        currentActIndex: activeActIndex,
+        status: 'COMPLETED',
+        actStartedAt: activeActStartedAt,
+        pausedAt: null,
+        completedAt: now,
+        updatedAt: now,
+        devMode: !!(session.devMode || hostSession?.devMode)
+      };
+      pushSessionToFirebase(updated);
+      const stored = getSessions();
+      stored[session.hostSessionId] = updated;
+      saveSessions(stored);
     }
-    beginActs();
+    endExperience();
   };
 
   const handleNextAct = () => {
@@ -362,21 +474,39 @@ function GuestApp() {
       return;
     }
 
-    // Guest is on the current act: only allow advancing if timer is complete (isNextActReady)
-    if (!isNextActReady) {
-      return;
-    }
-
-    if (isHostControlled && session.hostSessionId) {
-      // Guests CANNOT advance the host's session.
+    // Guest is on the current act: allow advancing if timer is complete or marked ready
+    const isActExpired = activeActStartedAt ? (Date.now() - activeActStartedAt >= DURATION_MS) : true;
+    if (!isNextActReady && !isActExpired && !isPastAct) {
       return;
     }
 
     if (scenario && activeActIndex < scenario.acts.length - 1) {
+      const nextIndex = activeActIndex + 1;
+      const now = Date.now();
+      lastHostActIndexRef.current = nextIndex;
+      if (session.hostSessionId) {
+        const updated: DinnerSession = {
+          id: session.hostSessionId,
+          tableName: hostSession?.tableName || `Table ${session.hostSessionId}`,
+          scenarioId: activeScenarioId || 'first-date',
+          language: validLanguage,
+          currentActIndex: nextIndex,
+          status: 'ACTIVE',
+          actStartedAt: now,
+          pausedAt: null,
+          completedAt: null,
+          updatedAt: now,
+          devMode: !!(session.devMode || hostSession?.devMode)
+        };
+        pushSessionToFirebase(updated);
+        const stored = getSessions();
+        stored[session.hostSessionId] = updated;
+        saveSessions(stored);
+      }
       advanceAct();
       setIsNextActReady(false);
     } else {
-      endExperience();
+      handleEndExperience();
     }
   };
 
@@ -551,7 +681,7 @@ function GuestApp() {
                     });
                   }
                 } else {
-                  startScenario(id);
+                  handleStartScenario(id);
                 }
               }} 
             />
@@ -568,7 +698,7 @@ function GuestApp() {
             className="flex-grow flex flex-col items-center justify-center pt-12 pb-12 px-6 relative overflow-y-auto hide-scrollbar"
           >
             <TopActions 
-              session={session} 
+              session={{ ...session, language: validLanguage }} 
               updateSession={updateSession} 
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
@@ -601,7 +731,7 @@ function GuestApp() {
             }}
           >
             <TopActions 
-              session={session} 
+              session={{ ...session, language: validLanguage }} 
               updateSession={updateSession} 
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
@@ -643,7 +773,7 @@ function GuestApp() {
             }}
           >
             <TopActions 
-              session={session} 
+              session={{ ...session, language: validLanguage }} 
               updateSession={updateSession} 
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 
@@ -702,7 +832,7 @@ function GuestApp() {
             className="flex-grow flex flex-col items-center justify-center p-6 text-center relative overflow-hidden"
           >
             <TopActions 
-              session={session} 
+              session={{ ...session, language: validLanguage }} 
               updateSession={updateSession} 
               updateHostStoreSession={updateHostStoreSession}
               onReset={handleThemeTripleClick} 

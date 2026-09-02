@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { db } from './firebase';
-import { doc, setDoc, getDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, onSnapshot, collection } from 'firebase/firestore';
 import { Language } from '../data/content';
 
 export interface DinnerSession {
@@ -65,6 +65,22 @@ export const getSessions = (): Record<string, DinnerSession> => {
   }
 };
 
+export const cleanSessionForFirestore = (session: DinnerSession) => {
+  return {
+    id: session.id,
+    tableName: session.tableName || `Table ${session.id}`,
+    scenarioId: session.scenarioId || 'first-date',
+    language: (session.language === 'EN' || session.language === 'ES' || session.language === 'RU') ? session.language : 'ES',
+    currentActIndex: typeof session.currentActIndex === 'number' ? session.currentActIndex : 0,
+    status: session.status || 'WAITING',
+    actStartedAt: typeof session.actStartedAt === 'number' ? session.actStartedAt : null,
+    pausedAt: typeof session.pausedAt === 'number' ? session.pausedAt : null,
+    completedAt: typeof session.completedAt === 'number' ? session.completedAt : null,
+    updatedAt: session.updatedAt || Date.now(),
+    devMode: !!session.devMode
+  };
+};
+
 export const fetchSessionById = async (id: string): Promise<DinnerSession | null> => {
   try {
     if (!db) return null;
@@ -82,20 +98,21 @@ export const fetchSessionById = async (id: string): Promise<DinnerSession | null
         return session;
       }
     }
-  } catch {
-    // Offline or error
+  } catch (e) {
+    console.error("fetchSessionById error:", e);
   }
   const local = getSessions();
   return local[id] || null;
 };
 
 // Push to Firestore in background
-const pushSessionToFirebase = async (session: DinnerSession) => {
+export const pushSessionToFirebase = async (session: DinnerSession) => {
   try {
     if (!db) return;
-    await setDoc(doc(db, "sessions", session.id), session);
+    const clean = cleanSessionForFirestore(session);
+    await setDoc(doc(db, "sessions", session.id), clean);
   } catch (e) {
-    console.error("Firebase save error", e);
+    console.error("Firebase save error:", e);
   }
 };
 
@@ -109,7 +126,7 @@ export const saveSessions = (sessions: Record<string, DinnerSession>) => {
   
   if (broadcastChannel) {
     try {
-      try { broadcastChannel.postMessage({ type: "SESSIONS_UPDATE", sessions: pruned }); } catch(e){}
+      broadcastChannel.postMessage({ type: "SESSIONS_UPDATE", sessions: pruned });
     } catch {
       // Ignore
     }
@@ -203,29 +220,29 @@ export function useSessions() {
       broadcastChannel.addEventListener('message', handleBroadcast);
     }
 
-    // Subscribe to Firestore for all active sessions in local storage
-    const unsubscribes: (() => void)[] = [];
-    const local = getSessions();
-    Object.keys(local).forEach(id => {
-       if (!db) return;
-       const unsub = onSnapshot(doc(db, "sessions", id), (docSnapshot) => {
-         if (docSnapshot.exists() && isMounted) {
-           const remote = docSnapshot.data() as DinnerSession;
-           const currentLocal = getSessions();
-           
-           // Only update if remote is newer
-           const localUpdated = currentLocal[id]?.updatedAt || currentLocal[id]?.actStartedAt || 0;
-           const remoteUpdated = remote.updatedAt || remote.actStartedAt || 0;
-           
-           if (remoteUpdated >= localUpdated) {
-             currentLocal[id] = remote;
-             saveSessions(currentLocal);
-             setSessions(currentLocal);
-           }
-         }
-       });
-       unsubscribes.push(unsub);
-    });
+    // Real-time Firestore sync on all sessions across all devices
+    let unsubFirestore: (() => void) | null = null;
+    if (db) {
+      try {
+        unsubFirestore = onSnapshot(collection(db, "sessions"), (snapshot) => {
+          if (!isMounted) return;
+          const remoteSessions: Record<string, DinnerSession> = {};
+          snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data() as DinnerSession;
+            if (data && data.id) {
+              remoteSessions[data.id] = data;
+            }
+          });
+          const pruned = pruneExpiredSessions(remoteSessions);
+          saveSessions(pruned);
+          setSessions(pruned);
+        }, (error) => {
+          console.error("Firestore collection listener error:", error);
+        });
+      } catch (e) {
+        console.error("Failed to attach Firestore sessions listener:", e);
+      }
+    }
 
     return () => {
       isMounted = false;
@@ -234,7 +251,9 @@ export function useSessions() {
       if (broadcastChannel) {
         broadcastChannel.removeEventListener('message', handleBroadcast);
       }
-      unsubscribes.forEach(u => u());
+      if (unsubFirestore) {
+        unsubFirestore();
+      }
     };
   }, []);
 
@@ -244,7 +263,7 @@ export function useSessions() {
       const updated: DinnerSession = { 
         ...current[id], 
         ...updates,
-        completedAt: updates.status === 'COMPLETED' ? (current[id].completedAt || Date.now()) : current[id].completedAt,
+        completedAt: updates.status === 'COMPLETED' ? (current[id].completedAt || Date.now()) : (updates.completedAt ?? current[id].completedAt ?? null),
         updatedAt: Date.now()
       };
       current[id] = updated;
@@ -273,22 +292,24 @@ export function useSessions() {
     saveSessions(current);
     pushSessionToFirebase(newSession);
     
-    // Slight delay to allow the useEffect to subscribe to the newly created session
-    setTimeout(() => { window.dispatchEvent(new Event('sessions-updated')); }, 100);
-    
+    setTimeout(() => { window.dispatchEvent(new Event('sessions-updated')); }, 50);
     return id;
   }, []);
 
   const advanceSession = useCallback((id: string) => {
     const current = getSessions();
     if (current[id]) {
-      current[id].currentActIndex += 1;
-      current[id].actStartedAt = Date.now();
-      current[id].status = 'ACTIVE';
-      current[id].pausedAt = null;
-      current[id].updatedAt = Date.now();
+      const updated: DinnerSession = {
+        ...current[id],
+        currentActIndex: current[id].currentActIndex + 1,
+        actStartedAt: Date.now(),
+        status: 'ACTIVE',
+        pausedAt: null,
+        updatedAt: Date.now()
+      };
+      current[id] = updated;
       saveSessions(current);
-      pushSessionToFirebase(current[id]);
+      pushSessionToFirebase(updated);
     }
   }, []);
 

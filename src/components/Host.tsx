@@ -246,8 +246,12 @@ function HostDashboard({
   const durationMs = sessionState.devMode ? 10000 : 10 * 60 * 1000;
 
   const sessionValues = Object.values(sessions) as DinnerSession[];
-  const activeSessions = sessionValues.filter(s => s.status !== 'COMPLETED');
-  const completedSessions = sessionValues.filter(s => s.status === 'COMPLETED');
+  const activeSessions = sessionValues
+    .filter(s => s.status !== 'COMPLETED')
+    .sort((a, b) => (b.updatedAt || b.actStartedAt || 0) - (a.updatedAt || a.actStartedAt || 0));
+  const completedSessions = sessionValues
+    .filter(s => s.status === 'COMPLETED')
+    .sort((a, b) => (b.completedAt || b.updatedAt || 0) - (a.completedAt || a.updatedAt || 0));
 
   const handleCreate = () => {
     if (!newTable.trim()) return;

@@ -18,23 +18,46 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
   const pullDistance = useMotionValue(0);
 
   // Responsive spring with smooth damping for rubber-band release
-  const springConfig = { damping: 28, stiffness: 300, mass: 0.5 };
+  const springConfig = { damping: 26, stiffness: 280, mass: 0.6 };
   const smoothPull = useSpring(pullDistance, springConfig);
 
   const [isPastThreshold, setIsPastThreshold] = useState(false);
   const isPastThresholdRef = useRef(false);
+
+  // Track light vs dark mode
+  const [isLight, setIsLight] = useState(false);
+
+  useEffect(() => {
+    const checkTheme = () => {
+      if (typeof document !== 'undefined') {
+        setIsLight(document.documentElement.classList.contains('light'));
+      }
+    };
+    checkTheme();
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+          checkTheme();
+        }
+      }
+    });
+
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   const isDraggingRef = useRef(false);
   const startClientYRef = useRef<number | null>(null);
   const startClientXRef = useRef<number | null>(null);
   const hasMovedRef = useRef(false);
 
-  // Dynamic threshold: strictly reaches half of the screen height
+  // Dynamic threshold: reaches ~40% of screen height
   const getThreshold = useCallback(() => {
     if (typeof window !== 'undefined') {
-      return Math.max(180, window.innerHeight * 0.48);
+      return Math.max(160, Math.min(260, window.innerHeight * 0.38));
     }
-    return 280;
+    return 200;
   }, []);
 
   // Update threshold state & optional haptic tick
@@ -56,6 +79,31 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
     });
     return () => unsub();
   }, [pullDistance, getThreshold]);
+
+  // Synchronize elastic pull upward motion to the container content
+  useEffect(() => {
+    const container = containerRef?.current;
+    if (!container) return;
+
+    const unsub = smoothPull.on('change', (val) => {
+      const children = Array.from(container.children) as HTMLElement[];
+      const transformVal = val > 0.5 ? `translate3d(0, ${-val}px, 0)` : '';
+      const transitionVal = isDraggingRef.current ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
+      for (const child of children) {
+        child.style.transform = transformVal;
+        child.style.transition = transitionVal;
+      }
+    });
+
+    return () => {
+      unsub();
+      const children = Array.from(container.children) as HTMLElement[];
+      for (const child of children) {
+        child.style.transform = '';
+        child.style.transition = '';
+      }
+    };
+  }, [containerRef, smoothPull]);
 
   // Release handler: if past midpoint threshold -> trigger next scene, else smoothly spring back
   const handleRelease = useCallback(() => {
@@ -98,7 +146,7 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDraggingRef.current || startClientYRef.current === null) return;
 
-    const dy = startClientYRef.current - e.clientY; // positive when dragging UP (scrolling down past end)
+    const dy = startClientYRef.current - e.clientY; // positive when dragging UP
     const dx = Math.abs((startClientXRef.current ?? e.clientX) - e.clientX);
 
     if (Math.abs(dy) > 4 || dx > 4) {
@@ -106,15 +154,15 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
     }
 
     if (dy > 0) {
-      const maxPull = typeof window !== 'undefined' ? window.innerHeight * 0.65 : 450;
+      const maxPull = typeof window !== 'undefined' ? window.innerHeight * 0.6 : 380;
       const threshold = getThreshold();
       
       let distance = 0;
       if (dy <= threshold) {
-        // Direct 1:1 finger tracking up to half screen
+        // Direct finger tracking up to threshold
         distance = dy;
       } else {
-        // Soft elastic resistance beyond half screen
+        // Soft elastic resistance beyond threshold
         distance = threshold + (dy - threshold) * 0.35;
       }
       pullDistance.set(Math.min(distance, maxPull));
@@ -151,11 +199,13 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
 
     let touchStartY = 0;
     let touchStartX = 0;
+    let bottomAnchorY: number | null = null;
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
         touchStartY = e.touches[0].clientY;
         touchStartX = e.touches[0].clientX;
+        bottomAnchorY = null;
       }
     };
 
@@ -164,33 +214,43 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
 
       const currentY = e.touches[0].clientY;
       const currentX = e.touches[0].clientX;
-      const dy = touchStartY - currentY; // finger moving UP
+      const totalDy = touchStartY - currentY; // finger moving UP
       const dx = Math.abs(touchStartX - currentX);
 
-      // Check if container is at the bottom (within 8px tolerance)
-      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 8;
+      // Check if container is at the bottom (within 12px tolerance)
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 12;
 
-      if (isAtBottom && dy > 4 && dy > dx * 0.6) {
-        if (!isDraggingRef.current) {
+      if (isAtBottom && totalDy > 0 && totalDy > dx * 0.5) {
+        if (bottomAnchorY === null) {
+          bottomAnchorY = currentY;
           isDraggingRef.current = true;
           hasMovedRef.current = true;
-          startClientYRef.current = currentY + pullDistance.get();
-          startClientXRef.current = currentX;
         }
 
-        const maxPull = window.innerHeight * 0.65;
-        const threshold = getThreshold();
-        let distance = 0;
-        if (dy <= threshold) {
-          distance = dy;
+        const pullDy = bottomAnchorY - currentY;
+        if (pullDy > 0) {
+          const maxPull = window.innerHeight * 0.6;
+          const threshold = getThreshold();
+          let distance = 0;
+          if (pullDy <= threshold) {
+            distance = pullDy;
+          } else {
+            distance = threshold + (pullDy - threshold) * 0.35;
+          }
+          pullDistance.set(Math.min(distance, maxPull));
         } else {
-          distance = threshold + (dy - threshold) * 0.35;
+          pullDistance.set(0);
         }
-        pullDistance.set(Math.min(distance, maxPull));
+      } else {
+        if (bottomAnchorY !== null) {
+          bottomAnchorY = null;
+          pullDistance.set(0);
+        }
       }
     };
 
     const onTouchEnd = () => {
+      bottomAnchorY = null;
       if (isDraggingRef.current) {
         handleRelease();
       }
@@ -218,13 +278,12 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
 
     const onWheel = (e: WheelEvent) => {
       if (disabled) return;
-      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 8;
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight <= 12;
 
       if (isAtBottom && e.deltaY > 0) {
-        e.preventDefault();
         const threshold = getThreshold();
         const current = pullDistance.get();
-        const next = current + e.deltaY * 0.7;
+        const next = current + e.deltaY * 0.6;
 
         if (next >= threshold) {
           onTrigger();
@@ -237,11 +296,11 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
         if (wheelTimer) clearTimeout(wheelTimer);
         wheelTimer = setTimeout(() => {
           pullDistance.set(0);
-        }, 300);
+        }, 250);
       }
     };
 
-    container.addEventListener('wheel', onWheel, { passive: false });
+    container.addEventListener('wheel', onWheel, { passive: true });
     return () => {
       container.removeEventListener('wheel', onWheel);
       if (wheelTimer) clearTimeout(wheelTimer);
@@ -251,58 +310,83 @@ export const ElasticPullTrigger: React.FC<ElasticPullTriggerProps> = ({
   const threshold = getThreshold();
 
   // Dynamic transforms:
-  // 1. Line height starts at 0px and stretches downwards in height as pull increases
-  const lineHeight = useTransform(smoothPull, (val) => `${val}px`);
+  // 1. Fallback translateY only when containerRef is not attached
+  const triggerTranslateY = useTransform(smoothPull, (val) => containerRef?.current ? 0 : -val);
 
-  // 2. Smooth continuous brightness & opacity increase from 0% pull to threshold (100%)
+  // 2. Elastic Line stretches upwards between baseline and rising label
+  const lineHeight = useTransform(smoothPull, (val) => `${val + 16}px`);
+
+  // 3. Smooth continuous brightness & opacity increase from 0% pull to threshold (100%)
   const pullProgress = useTransform(smoothPull, [0, threshold], [0, 1]);
   const textOpacity = useTransform(pullProgress, [0, 1], [0.55, 1]);
-  const lineOpacity = useTransform(pullProgress, [0, 1], [0.3, 1]);
-  const glowFilter = useTransform(pullProgress, [0, 0.6, 1], [
-    'drop-shadow(0 0 0px rgba(255,255,255,0))',
-    'drop-shadow(0 0 4px rgba(255,255,255,0.4))',
-    'drop-shadow(0 0 10px rgba(255,255,255,0.95))'
-  ]);
+  const lineOpacity = useTransform(pullProgress, [0, 1], [0.35, 1]);
+  const glowFilter = useTransform(pullProgress, (val) => {
+    if (val <= 0.05) {
+      return isLight ? 'drop-shadow(0 0 0px rgba(0,0,0,0))' : 'drop-shadow(0 0 0px rgba(255,255,255,0))';
+    }
+    if (isLight) {
+      const alpha = Math.min(0.8, val * 0.8);
+      const blur = Math.round(val * 8);
+      return `drop-shadow(0 0 ${blur}px rgba(0,0,0,${alpha}))`;
+    } else {
+      const alpha = Math.min(0.95, val * 0.95);
+      const blur = Math.round(val * 10);
+      return `drop-shadow(0 0 ${blur}px rgba(255,255,255,${alpha}))`;
+    }
+  });
 
   return (
     <div 
-      className="flex flex-col items-center w-full select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none"
+      className="flex flex-col items-center w-full select-none touch-none cursor-grab active:cursor-grabbing focus:outline-none group relative py-2"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerCancel}
       onClick={handleClick}
     >
-      {/* Text Label: Placed EXACTLY at the top, perfectly matching the original position */}
-      <motion.div
-        style={{ filter: glowFilter }}
-        className="flex items-center justify-center transition-transform"
+      {/* Elastic band element: rising upwards as user drags up */}
+      <motion.div 
+        style={{ y: triggerTranslateY }}
+        className="flex flex-col items-center w-full will-change-transform"
       >
-        <motion.span
-          style={{ opacity: textOpacity }}
-          className={`text-[10px] font-sans tracking-[0.2em] uppercase transition-colors duration-200 whitespace-nowrap ${
-            isPastThreshold ? 'text-white font-semibold' : 'text-text-main group-hover:text-white'
-          }`}
-        >
-          {label}
-        </motion.span>
-      </motion.div>
-
-      {/* Elastic Line: Placed BELOW the text label. Grows in height downwards as page scrolls down */}
-      <div className="flex justify-center w-full mt-4 overflow-visible">
+        {/* Text Label: Rises UP with the finger */}
         <motion.div
-          style={{
-            height: lineHeight,
-            opacity: lineOpacity,
-            filter: glowFilter
-          }}
-          className={`w-[1px] origin-top transition-colors duration-200 ${
-            isPastThreshold 
-              ? 'bg-white shadow-[0_0_12px_rgba(255,255,255,1)]' 
-              : 'bg-white'
-          }`}
-        />
-      </div>
+          style={{ filter: glowFilter }}
+          className="flex items-center justify-center"
+        >
+          <motion.span
+            style={{ opacity: textOpacity }}
+            className={`text-[10px] font-sans tracking-[0.2em] uppercase transition-colors duration-200 whitespace-nowrap ${
+              isLight
+                ? (isPastThreshold ? 'text-black font-semibold' : 'text-text-main group-hover:text-black')
+                : (isPastThreshold ? 'text-white font-semibold' : 'text-text-main group-hover:text-white')
+            }`}
+          >
+            {label}
+          </motion.span>
+        </motion.div>
+
+        {/* Elastic Rubber Line: Stretches from the rising label down to the baseline */}
+        <div className="flex justify-center w-full mt-3 overflow-visible">
+          <motion.div
+            style={{
+              height: lineHeight,
+              opacity: lineOpacity,
+              filter: glowFilter
+            }}
+            className={`w-[1px] origin-top transition-colors duration-200 ${
+              isLight
+                ? (isPastThreshold 
+                    ? 'bg-black shadow-[0_0_10px_rgba(0,0,0,0.8)]' 
+                    : 'bg-black')
+                : (isPastThreshold 
+                    ? 'bg-white shadow-[0_0_12px_rgba(255,255,255,1)]' 
+                    : 'bg-white')
+            }`}
+          />
+        </div>
+      </motion.div>
     </div>
   );
 };
+

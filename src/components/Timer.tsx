@@ -87,10 +87,6 @@ export function Timer({
   const t = uiTranslations[validLang] || uiTranslations.RU;
 
   if (isNextActReady || isExpired) {
-    if (isHostControlled && !isPastAct) {
-      return null;
-    }
-
     return (
       <div className="flex flex-col items-center w-full select-none">
         <ElasticPullTrigger 
