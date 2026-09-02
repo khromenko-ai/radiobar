@@ -320,14 +320,7 @@ function GuestApp() {
     }
 
     if (isHostControlled && session.hostSessionId) {
-      if (scenario && activeActIndex < scenario.acts.length - 1) {
-        advanceHostStoreSession(session.hostSessionId);
-        guestP2PNode.sendGuestAction({ type: 'ADVANCE_ACT', sessionId: session.hostSessionId });
-      } else {
-        updateHostStoreSession(session.hostSessionId, { status: 'COMPLETED' });
-        guestP2PNode.sendGuestAction({ type: 'END_SESSION', sessionId: session.hostSessionId });
-      }
-      setIsNextActReady(false);
+      // Guests CANNOT advance the host's session.
       return;
     }
 
@@ -630,6 +623,8 @@ function GuestApp() {
                     isNextActReady={isNextActReady || isPastAct}
                     handleNextAct={handleNextAct}
                     containerRef={actsContainerRef}
+                    isHostControlled={isHostControlled}
+                    isPastAct={isPastAct}
                   />
                 </div>
               </motion.div>

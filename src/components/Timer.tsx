@@ -59,7 +59,9 @@ export function Timer({
   onComplete,
   isNextActReady,
   handleNextAct,
-  containerRef
+  containerRef,
+  isHostControlled,
+  isPastAct
 }: { 
   actStartedAt: number, 
   durationMs: number, 
@@ -68,6 +70,7 @@ export function Timer({
   language: Language,
   onComplete: () => void,
   isHostControlled?: boolean,
+  isPastAct?: boolean,
   isNextActReady?: boolean,
   handleNextAct?: () => void,
   containerRef?: React.RefObject<HTMLDivElement | null>
@@ -79,10 +82,23 @@ export function Timer({
     pausedAt,
     onComplete
   });
+
   const validLang: Language = (language === 'EN' || language === 'ES' || language === 'RU') ? language : 'RU';
   const t = uiTranslations[validLang] || uiTranslations.RU;
 
   if (isNextActReady || isExpired) {
+    if (isHostControlled && !isPastAct) {
+      return (
+        <div className="flex flex-col items-center w-full select-none">
+          <div className="flex items-center justify-center">
+            <span className="text-[10px] font-sans tracking-[0.2em] text-text-sub uppercase whitespace-nowrap">
+              {t.hostWaiting || "WAITING"}
+            </span>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center w-full select-none">
         <ElasticPullTrigger 
