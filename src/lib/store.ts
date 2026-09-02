@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { hostP2PNode } from './p2p';
+import { db } from './firebase';
+import { doc, setDoc, getDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 export interface DinnerSession {
   id: string;
@@ -64,9 +66,10 @@ export const getSessions = (): Record<string, DinnerSession> => {
 
 export const fetchSessionById = async (id: string): Promise<DinnerSession | null> => {
   try {
-    const res = await fetch(`/api/sessions/${id}`);
-    if (res.ok) {
-      const session: DinnerSession = await res.json();
+    const docRef = doc(db, 'sessions', id);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const session = docSnap.data() as DinnerSession;
       if (session && session.id) {
         const local = getSessions();
         local[id] = session;
@@ -76,22 +79,18 @@ export const fetchSessionById = async (id: string): Promise<DinnerSession | null
       }
     }
   } catch {
-    // Offline or starting
+    // Offline or error
   }
   const local = getSessions();
   return local[id] || null;
 };
 
-// Push to server in background
-const pushSessionsToServer = async (sessions: Record<string, DinnerSession>) => {
+// Push to Firestore in background
+const pushSessionToFirebase = async (session: DinnerSession) => {
   try {
-    await fetch('/api/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sessions)
-    });
-  } catch {
-    // Offline or starting up
+    await setDoc(doc(db, 'sessions', session.id), session);
+  } catch (e) {
+    console.error("Firebase save error", e);
   }
 };
 
@@ -109,15 +108,12 @@ export const saveSessions = (sessions: Record<string, DinnerSession>) => {
     }
   }
 
-  // Broadcast to P2P connected guests
+  // Update legacy P2P host just in case any component still relies on it
   for (const s of Object.values(pruned)) {
     if (s && s.id) {
       hostP2PNode.updateState(s);
     }
   }
-
-  // Sync to server API
-  pushSessionsToServer(pruned);
 };
 
 export const getHostAuth = () => {
@@ -133,7 +129,7 @@ export const setHostAuth = (val: boolean) => {
 export function useSessions() {
   const [sessions, setSessions] = useState<Record<string, DinnerSession>>(() => getSessions());
   
-  // Local storage, broadcast channel, and periodic server polling
+  // Local storage, broadcast channel, and Firestore real-time sync
   useEffect(() => {
     let isMounted = true;
 
@@ -153,52 +149,37 @@ export function useSessions() {
       broadcastChannel.addEventListener('message', handleBroadcast);
     }
 
-    // Fetch latest sessions from server API immediately and periodically
-    const fetchServerSessions = async () => {
-      try {
-        const res = await fetch('/api/sessions');
-        if (res.ok) {
-          const remoteSessions: Record<string, DinnerSession> = await res.json();
-          if (remoteSessions) {
-            const prunedRemote = pruneExpiredSessions(remoteSessions);
-            const local = getSessions();
-            // Merge remote with local prioritizing higher updatedAt
-            const merged: Record<string, DinnerSession> = { ...local };
-            for (const [id, r] of Object.entries(prunedRemote)) {
-              if (!merged[id]) {
-                merged[id] = r;
-              } else {
-                const localUpdated = merged[id].updatedAt || merged[id].actStartedAt || 0;
-                const remoteUpdated = r.updatedAt || r.actStartedAt || 0;
-                if (remoteUpdated >= localUpdated) {
-                  merged[id] = r;
-                }
-              }
-            }
-            const prunedMerged = pruneExpiredSessions(merged);
-            if (JSON.stringify(prunedMerged) !== JSON.stringify(local)) {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(prunedMerged));
-              if (isMounted) setSessions(prunedMerged);
-              window.dispatchEvent(new Event('sessions-updated'));
-            }
-          }
-        }
-      } catch {
-        // Offline or dev server starting
-      }
-    };
-
-    fetchServerSessions();
-    const pollInterval = setInterval(fetchServerSessions, 800);
+    // Subscribe to Firestore for all active sessions in local storage
+    const unsubscribes: (() => void)[] = [];
+    const local = getSessions();
+    Object.keys(local).forEach(id => {
+       const unsub = onSnapshot(doc(db, 'sessions', id), (docSnapshot) => {
+         if (docSnapshot.exists() && isMounted) {
+           const remote = docSnapshot.data() as DinnerSession;
+           const currentLocal = getSessions();
+           
+           // Only update if remote is newer
+           const localUpdated = currentLocal[id]?.updatedAt || currentLocal[id]?.actStartedAt || 0;
+           const remoteUpdated = remote.updatedAt || remote.actStartedAt || 0;
+           
+           if (remoteUpdated >= localUpdated) {
+             currentLocal[id] = remote;
+             saveSessions(currentLocal);
+             setSessions(currentLocal);
+           }
+         }
+       });
+       unsubscribes.push(unsub);
+    });
 
     return () => {
       isMounted = false;
-      clearInterval(pollInterval);
       window.removeEventListener('storage', handleLocalUpdate);
       window.removeEventListener('sessions-updated', handleLocalUpdate);
       if (broadcastChannel) {
         broadcastChannel.removeEventListener('message', handleBroadcast);
       }
+      unsubscribes.forEach(u => u());
     };
   }, []);
 
@@ -213,13 +194,14 @@ export function useSessions() {
       };
       current[id] = updated;
       saveSessions(current);
+      pushSessionToFirebase(updated);
     }
   }, []);
 
   const createSession = useCallback((tableName: string, scenarioId: string, devMode?: boolean) => {
     const id = Math.random().toString(36).substring(2, 8).toUpperCase();
     const current = getSessions();
-    current[id] = {
+    const newSession: DinnerSession = {
       id,
       tableName,
       scenarioId,
@@ -231,7 +213,13 @@ export function useSessions() {
       updatedAt: Date.now(),
       devMode: !!devMode
     };
+    current[id] = newSession;
     saveSessions(current);
+    pushSessionToFirebase(newSession);
+    
+    // Slight delay to allow the useEffect to subscribe to the newly created session
+    setTimeout(() => { window.dispatchEvent(new Event('sessions-updated')); }, 100);
+    
     return id;
   }, []);
 
@@ -244,6 +232,7 @@ export function useSessions() {
       current[id].pausedAt = null;
       current[id].updatedAt = Date.now();
       saveSessions(current);
+      pushSessionToFirebase(current[id]);
     }
   }, []);
 
@@ -260,8 +249,9 @@ export function useSessions() {
       if (broadcastChannel) {
         broadcastChannel.postMessage({ type: 'SESSIONS_UPDATE', sessions: current });
       }
-      // Call server delete API
-      fetch(`/api/sessions/${id}`, { method: 'DELETE' }).catch(() => {});
+      try {
+        deleteDoc(doc(db, 'sessions', id));
+      } catch (e) {}
     }
   }, []);
 
