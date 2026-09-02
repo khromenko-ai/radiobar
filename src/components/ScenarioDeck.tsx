@@ -66,7 +66,7 @@ export function ScenarioDeck({
   });
 
   return (
-    <div className="relative w-full flex-shrink-0 h-[65vh] max-h-[550px] flex items-center justify-center perspective-[1000px]">
+    <div className="relative w-full flex-1 min-h-[300px] max-h-[500px] my-auto flex items-center justify-center perspective-[1000px]">
       <AnimatePresence custom={exitDirection}>
         {stackItems.map((item, i) => {
           const isTop = i === 0;
@@ -96,7 +96,7 @@ export function ScenarioDeck({
               animate={{ 
                 opacity: 1 - i * 0.15, 
                 scale: 1 - i * 0.05, 
-                y: i * 20,
+                y: i * 16,
                 zIndex: 10 - i
               }}
               exit={(direction) => ({ 
@@ -107,20 +107,20 @@ export function ScenarioDeck({
                 transition: { duration: 0.3 }
               })}
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute w-full h-full max-h-[500px] max-w-[340px] bg-bg-card border border-border-main p-8 flex flex-col items-center justify-center text-center rounded-2xl shadow-2xl origin-bottom"
+              className="absolute w-full h-[88%] max-h-[440px] max-w-[330px] bg-bg-card border border-border-main p-6 sm:p-8 flex flex-col items-center justify-center text-center rounded-2xl shadow-2xl origin-bottom"
               style={{
                 cursor: isTop ? 'grab' : 'auto'
               }}
               whileTap={{ cursor: isTop ? 'grabbing' : 'auto' }}
             >
-              <h2 className="text-3xl font-serif text-text-main mb-4 tracking-wide leading-tight">
+              <h2 className="text-2xl sm:text-3xl font-serif text-text-main mb-3 sm:mb-4 tracking-wide leading-tight">
                 {item.title}
               </h2>
-              <p className="text-sm font-sans text-text-muted mb-12 tracking-wider uppercase">
+              <p className="text-xs sm:text-sm font-sans text-text-muted mb-6 sm:mb-10 tracking-wider uppercase">
                 {item.subtitle}
               </p>
-              <div className="w-8 h-[1px] bg-bg-border mb-12" />
-              <p className="text-sm font-sans text-text-sec leading-relaxed max-w-[240px]">
+              <div className="w-8 h-[1px] bg-bg-border mb-6 sm:mb-10" />
+              <p className="text-xs sm:text-sm font-sans text-text-sec leading-relaxed max-w-[240px]">
                 {item.description}
               </p>
             </motion.div>
@@ -129,7 +129,7 @@ export function ScenarioDeck({
       </AnimatePresence>
       
       {/* Indicators */}
-      <div className="absolute -bottom-8 flex space-x-3">
+      <div className="absolute bottom-0 flex space-x-3">
         {scenarios.map((s, idx) => (
           <div 
             key={idx} 

@@ -68,23 +68,33 @@ export function Timer({
   }
 
   if (isNextActReady) {
+    // The parent container in App.tsx translates up by pullDistance * 0.5.
+    // To keep the line anchored to the bottom visually, it needs to grow by exactly that amount.
+    // We use scaleY from the top so it visually stretches downwards.
+    const scaleFactor = 1 + (pullDistance * 0.9) / 64;
+
     return (
       <button 
         onClick={handleNextAct} 
-        className="group flex flex-col items-center cursor-pointer select-none focus:outline-none transition-transform duration-150 ease-out"
-        style={{
-          transform: `translateY(-${pullDistance * 0.35}px)`
-        }}
+        className="group flex flex-col items-center cursor-pointer select-none focus:outline-none"
       >
         <span className={`text-[10px] font-sans tracking-widest uppercase mb-4 transition-colors duration-300 ${
-          pullProgress >= 1 ? 'text-text-main font-medium' : 'text-text-sub group-hover:text-text-main'
+          pullProgress >= 1 ? 'text-text-main font-semibold' : 'text-text-sub group-hover:text-text-main'
         }`}>
           {t.nextMoment}
         </span>
         <div 
-          className={`w-[1px] transition-all duration-300 ${
-            pullProgress >= 1 ? 'bg-bg-inv h-20' : 'bg-bg-hover group-hover:bg-bg-inv h-16'
+          className={`w-[1px] transition-colors ${
+            pullProgress >= 1 
+              ? 'bg-text-main shadow-[0_0_8px_rgba(255,255,255,0.4)]' 
+              : 'bg-border-focus group-hover:bg-text-main'
           }`} 
+          style={{
+            height: '64px',
+            transform: `scaleY(${scaleFactor})`,
+            transformOrigin: 'top',
+            transition: pullDistance > 0 ? 'background-color 0.2s' : 'transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s'
+          }}
         />
       </button>
     );

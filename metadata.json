@@ -1,6 +1,8 @@
 {
-  "name": "Immersive Dinner",
+  "name": "Immersive Dinner Menu",
   "description": "An immersive dinner experience for two. A digital theatrical interface acting as a score for a live dining experience.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -82,7 +82,16 @@ export const uiTranslations = {
     hostNewDinner: "NEW DINNER",
     hostTableSession: "TABLE / SESSION NAME",
     hostStartDinner: "START DINNER",
-    hostNoActive: "NO ACTIVE SESSIONS"
+    hostNoActive: "NO ACTIVE SESSIONS",
+    hostQrCode: "QR CODE",
+    hostScanQr: "Scan with camera to open guest session",
+    hostCopied: "COPIED",
+    pwaInstall: "INSTALL APP",
+    pwaInstallPrompt: "Add to Home Screen for a seamless full-screen experience without browser bars.",
+    pwaIosTitle: "Install on iPhone / iPad",
+    pwaIosStep1: "1. Tap the Share button in Safari toolbar.",
+    pwaIosStep2: "2. Scroll down and tap 'Add to Home Screen'.",
+    fullscreen: "Fullscreen"
   },
   ES: {
     welcomeTitle: "TU VELADA\nCOMIENZA AQUÍ.",
@@ -136,7 +145,16 @@ export const uiTranslations = {
     hostNewDinner: "NUEVA CENA",
     hostTableSession: "MESA / SESIÓN",
     hostStartDinner: "INICIAR CENA",
-    hostNoActive: "SIN CENAS ACTIVAS"
+    hostNoActive: "SIN CENAS ACTIVAS",
+    hostQrCode: "CÓDIGO QR",
+    hostScanQr: "Escanea con la cámara para abrir la sesión",
+    hostCopied: "COPIADO",
+    pwaInstall: "INSTALAR APP",
+    pwaInstallPrompt: "Añade a la pantalla de inicio para una experiencia inmersiva a pantalla completa sin interfaz del navegador.",
+    pwaIosTitle: "Instalar en iPhone / iPad",
+    pwaIosStep1: "1. Toca el botón Compartir en la barra de Safari.",
+    pwaIosStep2: "2. Desplázate hacia abajo y pulsa 'Añadir a pantalla de inicio'.",
+    fullscreen: "Pantalla completa"
   },
   RU: {
     welcomeTitle: "ВАШ ВЕЧЕР\nНАЧИНАЕТСЯ ЗДЕСЬ.",
@@ -190,7 +208,16 @@ export const uiTranslations = {
     hostNewDinner: "НОВЫЙ УЖИН",
     hostTableSession: "ИМЯ СТОЛА / СЕССИИ",
     hostStartDinner: "НАЧАТЬ УЖИН",
-    hostNoActive: "НЕТ АКТИВНЫХ УЖИНОВ"
+    hostNoActive: "НЕТ АКТИВНЫХ УЖИНОВ",
+    hostQrCode: "QR-КОД",
+    hostScanQr: "Отсканируйте камерой телефона, чтобы открыть сессию",
+    hostCopied: "СКОПИРОВАНО",
+    pwaInstall: "УСТАНОВИТЬ",
+    pwaInstallPrompt: "Добавьте на главный экран для полноэкранного режима без интерфейса браузера.",
+    pwaIosTitle: "Установка на iPhone / iPad",
+    pwaIosStep1: "1. Нажмите кнопку «Поделиться» внизу в панели Safari.",
+    pwaIosStep2: "2. Прокрутите и выберите «На экран Домой».",
+    fullscreen: "На весь экран"
   }
 };
 
